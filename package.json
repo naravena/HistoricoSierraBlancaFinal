@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "generar-hash": "node scripts/generar-hash-password.js"
+    "generar-hash": "node scripts/generar-hash-password.js",
+    "turso:init": "node scripts/init-turso.js",
+    "turso:importar": "node scripts/importar-readings.js",
+    "turso:huecos": "node scripts/auditar-huecos.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -16,7 +19,6 @@
     "express-rate-limit": "^7.4.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.0",
-    "pdf-parse": "1.1.1",
-    "pg": "^8.12.0"
+    "pdf-parse": "1.1.1"
   }
 }
