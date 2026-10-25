@@ -28,13 +28,13 @@ async function main() {
 
   const { rows } = await db.execute({
     sql: `
-      SELECT entity_id, date(recorded_at) AS dia, COUNT(*) AS lecturas
-      FROM readings
-      WHERE entity_id IN (?, ?)
+      SELECT statistic_id, date(recorded_at) AS dia, COUNT(*) AS lecturas
+      FROM energy_statics
+      WHERE statistic_id IN (?, ?)
         AND (? IS NULL OR date(recorded_at) >= ?)
         AND (? IS NULL OR date(recorded_at) <= ?)
-      GROUP BY entity_id, date(recorded_at)
-      ORDER BY entity_id, dia
+      GROUP BY statistic_id, date(recorded_at)
+      ORDER BY statistic_id, dia
     `,
     args: [
       ENTITIES[0][0], ENTITIES[1][0],
@@ -42,11 +42,10 @@ async function main() {
     ],
   });
 
-  const names = new Map(ENTITIES);
   let totalMissing = 0;
 
   for (const [entityId, label] of ENTITIES) {
-    const dates = rows.filter((row) => row.entity_id === entityId).map((row) => String(row.dia).slice(0, 10)).filter(Boolean);
+    const dates = rows.filter((row) => row.statistic_id === entityId).map((row) => String(row.dia).slice(0, 10)).filter(Boolean);
     let first = desde || dates[0];
     let last = hasta || dates[dates.length - 1];
 
