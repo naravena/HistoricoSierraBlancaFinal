@@ -8,7 +8,8 @@
     "start": "node server.js",
     "generar-hash": "node scripts/generar-hash-password.js",
     "turso:init": "node scripts/init-turso.js",
-    "turso:importar": "node scripts/importar-readings.js"
+    "turso:importar": "node scripts/importar-readings.js",
+    "turso:huecos": "node scripts/auditar-huecos.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
