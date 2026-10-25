@@ -52,6 +52,22 @@ pnpm turso:importar -- readings.csv
 
 El importador inserta lotes y evita duplicar una lectura con la misma entidad y fecha. Conserva una copia del CSV original hasta verificar los resultados. No compartas el token de Turso ni lo subas al repositorio.
 
+## Detectar días sin lecturas
+
+No hace falta volver a importar datos si ya están en Turso. Para listar los días en los que no existe ninguna lectura de Planta Baja o Planta Alta, ejecuta:
+
+~~~bash
+pnpm turso:huecos
+~~~
+
+Por defecto revisa desde el primer hasta el último día con datos de cada sensor. También puedes indicar un rango inclusivo:
+
+~~~bash
+pnpm turso:huecos -- 2025-01-01 2026-10-25
+~~~
+
+El informe lista por separado los días vacíos de cada sensor. Detecta días sin ninguna lectura; no detecta interrupciones de unas horas si ese día sí tiene alguna lectura.
+
 ## Despliegue en Vercel
 
 En Project → Settings → Environment Variables, configura:
