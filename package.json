@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
+    "test": "node --test",
     "generar-hash": "node scripts/generar-hash-password.js",
     "turso:init": "node scripts/init-turso.js",
     "turso:importar": "node scripts/importar-readings.js",
-    "turso:huecos": "node scripts/auditar-huecos.js"
+    "turso:huecos": "node scripts/auditar-huecos.js",
+    "turso:auditar": "node scripts/auditar-historico.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
