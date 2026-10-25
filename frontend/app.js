@@ -47,6 +47,22 @@ async function consultar() {
     document.getElementById("val-alta").textContent = `${datos.totales.alta} kWh`;
     document.getElementById("val-total").textContent = `${datos.totales.total} kWh`;
 
+    let avisoCobertura = document.getElementById("aviso-cobertura");
+    if (!avisoCobertura) {
+      avisoCobertura = document.createElement("p");
+      avisoCobertura.id = "aviso-cobertura";
+      avisoCobertura.className = "aviso-box";
+      document.querySelector(".chart-panel").before(avisoCobertura);
+    }
+    const incompletos = datos.diasIncompletos || [];
+    if (incompletos.length) {
+      avisoCobertura.hidden = false;
+      avisoCobertura.textContent = `⚠️ Datos parciales o con huecos en: ${incompletos.join(", ")}. El consumo mostrado corresponde a los registros disponibles, no necesariamente al día completo.`;
+    } else {
+      avisoCobertura.hidden = true;
+      avisoCobertura.textContent = "";
+    }
+
     dibujarGrafica(datos);
   } catch (err) {
     alert(err.message);
