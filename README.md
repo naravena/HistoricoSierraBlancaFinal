@@ -1,42 +1,74 @@
 # Histórico Sierra Blanca
 
-Portal simple de consulta del historial de consumo (Planta Baja / Planta Alta). Requiere que la sincronización de Home Assistant → Supabase ya esté funcionando (`readings` con datos).
+Portal de consulta del historial de consumo de Planta Baja y Planta Alta. El backend consulta **Turso (libSQL/SQLite)**; ya no necesita Supabase ni PostgreSQL.
 
-## Local
+## Requisitos
 
-```bash
-npm install
-cp .env.example .env
-npm run generar-hash "TuContraseñaSegura"   # copia el resultado a ADMIN_PASSWORD_HASH en .env
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # copia a JWT_SECRET
-# rellena también SUPABASE_DB_URL en .env
-npm run dev
-```
+- Node.js 20 o superior (incluye fetch nativo).
+- Una base de datos Turso creada.
+- Las lecturas históricas de readings exportadas para su importación.
 
-Abre `http://localhost:3000` — te pedirá contraseña.
+## Configuración local
 
-## GitHub + Vercel
+1. Instala dependencias con pnpm install.
+2. Copia .env.example a .env y completa TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, ADMIN_PASSWORD_HASH y JWT_SECRET.
+3. Genera el hash de contraseña y copia el resultado a ADMIN_PASSWORD_HASH:
 
-```bash
-git init && git add . && git commit -m "Histórico Sierra Blanca"
-git remote add origin https://github.com/TU_USUARIO/historico-sierra-blanca.git
-git branch -M main && git push -u origin main
-```
+   ~~~bash
+   pnpm generar-hash "TuContraseñaSegura"
+   ~~~
 
-En Vercel: **Add New → Project** → importa el repo → Framework: **Other** → antes de desplegar, añade en **Environment Variables**:
+4. Crea la tabla e índice en Turso:
 
-| Variable | Valor |
+   ~~~bash
+   pnpm turso:init
+   ~~~
+
+5. Inicia el portal:
+
+   ~~~bash
+   pnpm dev
+   ~~~
+
+Abre http://localhost:3000.
+
+## Migrar los datos históricos
+
+La aplicación necesita una tabla readings con las columnas entity_id, recorded_at y value. El esquema se define en turso/schema.sql.
+
+Exporta desde el origen los datos de readings a un CSV UTF-8 con estas cabeceras exactas:
+
+~~~csv
+entity_id,recorded_at,value
+sensor.sierra_blanca_energia_consumida_a,2026-01-01T00:00:00.000Z,1234.5
+sensor.sierra_blanca_energia_consumida_b,2026-01-01T00:00:00.000Z,2345.6
+~~~
+
+Guárdalo como readings.csv en la raíz y ejecuta:
+
+~~~bash
+pnpm turso:importar -- readings.csv
+~~~
+
+El importador inserta lotes y evita duplicar una lectura con la misma entidad y fecha. Conserva una copia del CSV original hasta verificar los resultados. No compartas el token de Turso ni lo subas al repositorio.
+
+## Despliegue en Vercel
+
+En Project → Settings → Environment Variables, configura:
+
+| Variable | Descripción |
 |---|---|
-| `SUPABASE_DB_URL` | tu cadena de conexión de Supabase (o deja que la integración Vercel↔Supabase rellene `POSTGRES_URL`, también se acepta) |
-| `ADMIN_PASSWORD_HASH` | el hash generado arriba |
-| `JWT_SECRET` | el valor aleatorio generado arriba |
-| `NODE_ENV` | `production` |
+| TURSO_DATABASE_URL | URL libsql://... de Turso |
+| TURSO_AUTH_TOKEN | Token de acceso de Turso |
+| ADMIN_PASSWORD_HASH | Hash de la contraseña de acceso |
+| JWT_SECRET | Secreto aleatorio para JWT |
+| NODE_ENV | production |
 
-Deploy. Listo — solo tú puedes entrar, con tu contraseña.
+Después, vuelve a desplegar. No configures variables de Supabase o PostgreSQL para esta versión.
 
-## Qué hace y qué no hace (a propósito, para mantenerlo pequeño)
+## Funcionamiento
 
-- Un único endpoint de datos (`/api/consumo`), una única pantalla.
-- El consumo se calcula por deltas positivos (ignora resets del contador), igual que en el proyecto principal — es lo único "no trivial" del backend.
-- Analiza facturas PDF de Repsol, extrae kWh, precio de energía €/kWh, periodo y total, y calcula el reparto del importe entre Planta Baja / Planta Alta usando el consumo real registrado.
-- El cálculo del consumo incluye la lectura anterior al inicio del periodo para no perder el primer delta y respeta el día final de la factura.
+- El consumo se calcula como diferencias positivas entre lecturas consecutivas; se ignoran los resets del contador.
+- Las consultas incluyen la lectura anterior al inicio del periodo para no perder el primer incremento.
+- Analiza facturas PDF de Repsol y reparte el importe según el consumo registrado.
+- El último día de una factura se incluye completo.
