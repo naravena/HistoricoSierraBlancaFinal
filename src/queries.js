@@ -88,6 +88,8 @@ async function consultarConsumo(db, desde, hasta) {
     previous.set(key, { counter, instant: r.instant });
     const day = localDate(r.instant);
     if (day < desde || day > hasta || !prior) continue;
+    // El primer punto del día es la base del contador; no atribuir al día actual el delta de la noche anterior.
+    if (localDate(prior.instant) !== day) continue;
     const delta = counter >= prior.counter ? counter - prior.counter : 0;
     const groupKey = `${r.entity_id}|${day}|${r.origen}`;
     const entry = bySourceDay.get(groupKey) || { entity_id: r.entity_id, dia: day, origen: r.origen, consumo: 0, ultimo: null };
