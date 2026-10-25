@@ -10,26 +10,35 @@ document.getElementById("btn-logout").addEventListener("click", async () => {
   window.location.href = "/login.html";
 });
 
+function fechaLocalISO(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function rangoPorDefecto() {
   const hoy = new Date();
   const hace30 = new Date(hoy);
   hace30.setDate(hoy.getDate() - 30);
-  const fmt = (d) => d.toISOString().slice(0, 10);
-  document.getElementById("hasta").value = fmt(hoy);
-  document.getElementById("desde").value = fmt(hace30);
+  // No usar toISOString(): convierte a UTC y puede seleccionar el día anterior
+  // en España cuando el navegador está en una zona horaria positiva.
+  document.getElementById("hasta").value = fechaLocalISO(hoy);
+  document.getElementById("desde").value = fechaLocalISO(hace30);
 }
 
 async function consultar() {
   const desde = document.getElementById("desde").value;
   const hasta = document.getElementById("hasta").value;
   if (!desde || !hasta) return;
+  if (desde > hasta) return alert("La fecha inicial no puede ser posterior a la final.");
 
   const boton = document.getElementById("btn-consultar");
   boton.disabled = true;
   boton.textContent = "Cargando…";
 
   try {
-    const res = await fetch(`/api/consumo?desde=${desde}&hasta=${hasta}`, { credentials: "include" });
+    const res = await fetch(`/api/consumo?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`, { credentials: "include" });
     if (res.status === 401) return (window.location.href = "/login.html");
     const datos = await res.json();
     if (!res.ok) throw new Error(datos.error || "Error al consultar");
