@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sierra Blanca — Acceso</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body class="login-body">
+  <div class="login-card">
+    <div class="brand">
+      <span class="brand-mark">🏔️</span>
+      <div>
+        <div class="brand-title">Sierra Blanca</div>
+        <div class="brand-sub">Historial de consumo</div>
+      </div>
+    </div>
+    <form id="login-form">
+      <div class="field">
+        <label for="password">Contraseña</label>
+        <input type="password" id="password" autocomplete="current-password" autofocus required />
+      </div>
+      <p id="error" class="error-box" hidden></p>
+      <button type="submit" class="btn">Entrar</button>
+    </form>
+  </div>
+  <script src="login.js"></script>
+</body>
+</html>

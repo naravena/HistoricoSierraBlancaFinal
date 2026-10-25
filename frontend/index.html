@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sierra Blanca — Historial de consumo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <div>
+      <h1>🏔️ Sierra Blanca</h1>
+      <p>Historial de consumo — Planta Baja y Planta Alta</p>
+    </div>
+    <button id="btn-logout" class="btn-logout">Cerrar sesión</button>
+  </div>
+
+  <div class="panel">
+    <div class="field">
+      <label for="desde">Desde</label>
+      <input type="date" id="desde" />
+    </div>
+    <div class="field">
+      <label for="hasta">Hasta</label>
+      <input type="date" id="hasta" />
+    </div>
+    <button id="btn-consultar" class="btn">Consultar</button>
+  </div>
+
+  <div class="cards">
+    <div class="card baja">
+      <div class="lbl">Planta Baja</div>
+      <div class="val" id="val-baja">—</div>
+    </div>
+    <div class="card alta">
+      <div class="lbl">Planta Alta</div>
+      <div class="val" id="val-alta">—</div>
+    </div>
+    <div class="card">
+      <div class="lbl">Total vivienda</div>
+      <div class="val" id="val-total">—</div>
+    </div>
+  </div>
+
+  <div class="chart-panel">
+    <canvas id="chart"></canvas>
+  </div>
+
+  <div class="header" style="margin-top: 36px;">
+    <div>
+      <h1 style="font-size:20px;">📄 Reparto de factura mensual</h1>
+      <p>Sube el PDF de la factura de Repsol. Extrae automáticamente kWh, precio €/kWh, periodo y total, y reparte el importe según el consumo real de cada planta.</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="field" style="flex: 2;">
+      <label for="factura-pdf">Factura (PDF)</label>
+      <input type="file" id="factura-pdf" accept="application/pdf" />
+    </div>
+    <button id="btn-analizar-factura" class="btn">Analizar factura</button>
+  </div>
+
+  <div id="resultado-factura"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="app.js"></script>
+</body>
+</html>

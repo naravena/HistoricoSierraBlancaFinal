@@ -1,0 +1,107 @@
+:root {
+  --bg: #10161c;
+  --surface: #171f27;
+  --surface-2: #1e2830;
+  --border: #2b3540;
+  --text: #e7ebee;
+  --text-muted: #8b96a1;
+
+  --baja: #4fa3d1;   /* azul cielo - Planta Baja */
+  --baja-dim: #4fa3d122;
+  --alta: #7fd8b8;   /* verde glaciar - Planta Alta */
+  --alta-dim: #7fd8b822;
+
+  --danger: #e07a7a;
+  --radius: 8px;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Login ---- */
+.login-body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.login-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  padding: 36px 32px; width: 100%; max-width: 320px;
+}
+.brand { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; justify-content: center; }
+.brand-mark { font-size: 22px; }
+.brand-title { font-weight: 700; font-size: 17px; line-height: 1.1; }
+.brand-sub { font-size: 12px; color: var(--text-muted); }
+
+.field { margin-bottom: 16px; }
+.field label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; font-weight: 500; }
+.field input {
+  width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  font-size: 14px; padding: 10px 12px; border-radius: var(--radius); font-family: inherit;
+}
+.field input:focus { outline: 2px solid var(--baja); outline-offset: 1px; }
+
+.btn {
+  width: 100%; background: var(--baja); color: #06202f; border: none; font-weight: 600;
+  font-size: 14px; padding: 11px 18px; border-radius: var(--radius); cursor: pointer;
+}
+.btn:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.error-box {
+  color: var(--danger); font-size: 13px; background: #e07a7a22; border: 1px solid #e07a7a55;
+  border-radius: var(--radius); padding: 8px 10px; margin: 2px 0 14px 0;
+}
+
+/* ---- Dashboard ---- */
+.page { max-width: 880px; margin: 0 auto; padding: 40px 24px; }
+.header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; }
+.header h1 { font-size: 24px; margin: 0 0 4px 0; font-weight: 700; }
+.header p { color: var(--text-muted); font-size: 13px; margin: 0; }
+.btn-logout {
+  background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+  font-size: 13px; padding: 7px 14px; border-radius: var(--radius); cursor: pointer;
+}
+.btn-logout:hover { color: var(--text); border-color: var(--text-muted); }
+
+.panel {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 20px; margin-bottom: 20px; display: flex; gap: 14px; align-items: end; flex-wrap: wrap;
+}
+.panel .field { margin-bottom: 0; flex: 1; min-width: 140px; }
+.panel .btn { width: auto; padding: 10px 22px; }
+
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px;
+}
+.card .lbl { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+.card .val { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.card.baja { border-color: var(--baja); }
+.card.baja .val { color: var(--baja); }
+.card.alta { border-color: var(--alta); }
+.card.alta .val { color: var(--alta); }
+
+.chart-panel {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 20px; height: 340px;
+}
+
+.muted { color: var(--text-muted); font-size: 13px; }
+
+.card.comun { border-color: var(--text-muted); }
+.card.comun .val { color: var(--text-muted); }
+
+.aviso-box {
+  background: #e0a45822; border: 1px solid #e0a45855; color: #e0a458;
+  border-radius: var(--radius); padding: 10px 14px; font-size: 13px; margin-bottom: 16px;
+}
+
+.factura-resumen {
+  font-size: 13px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.6;
+}
+.factura-resumen strong { color: var(--text); }
+
+@media (max-width: 640px) {
+  .cards { grid-template-columns: 1fr; }
+}
