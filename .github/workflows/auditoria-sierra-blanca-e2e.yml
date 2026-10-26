@@ -1,0 +1,43 @@
+name: Auditoría E2E Sierra Blanca
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+      timezone: "Europe/Madrid"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: auditoria-sierra-blanca
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Home Assistant vs Turso vs portal
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HA_BASE_URL: ${{ secrets.HA_BASE_URL }}
+      HA_TOKEN: ${{ secrets.HA_TOKEN }}
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      PORTAL_BASE_URL: ${{ vars.PORTAL_BASE_URL }}
+      PORTAL_PASSWORD: ${{ secrets.PORTAL_PASSWORD }}
+      AUDIT_TOLERANCE_KWH: "0.05"
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Conectar runner a Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Auditar Home Assistant, Turso y API web
+        run: node scripts/auditar-integracion-e2e.js
