@@ -32,6 +32,11 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Conectar runner a Tailscale
         uses: tailscale/github-action@v4
         with:
