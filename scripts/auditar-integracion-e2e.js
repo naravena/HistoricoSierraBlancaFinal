@@ -195,6 +195,9 @@ async function main() {
     const dbPoints = readings ? readings.filter((r) => r.entity_id === entity) : null;
     const dbDay = dbPoints ? daily(dbPoints, day) : null;
     const matches = haDay && dbDay ? comparePoints(haDay.points, dbPoints) : null;
+    if (!haDay) errors.push("no se pudieron obtener datos de HA");
+    if (!dbDay) errors.push("no se pudieron obtener lecturas de Turso");
+    if (!direct) errors.push("no se pudo calcular el resultado SQL esperado de Turso");
     if (haDay && haDay.count < 2) errors.push("menos de 2 puntos en HA");
     if (dbDay && dbDay.count < 2) errors.push("menos de 2 lecturas en Turso");
     if (matches) {
