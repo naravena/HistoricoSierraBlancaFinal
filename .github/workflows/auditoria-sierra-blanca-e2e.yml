@@ -1,4 +1,4 @@
-name: Auditoría E2E Sierra Blanca
+name: Auditoría automática Sierra Blanca
 
 on:
   schedule:
@@ -16,9 +16,9 @@ concurrency:
 
 jobs:
   audit:
-    name: Home Assistant vs Turso vs portal
+    name: Auditoría del último día completo
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       HA_BASE_URL: ${{ secrets.HA_BASE_URL }}
       HA_TOKEN: ${{ secrets.HA_TOKEN }}
@@ -31,18 +31,15 @@ jobs:
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4
-
       - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-
       - name: Conectar runner a Tailscale
         uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
-
-      - name: Auditar Home Assistant, Turso y API web
+      - name: Auditar último día completo
         run: node scripts/auditar-integracion-e2e.js
