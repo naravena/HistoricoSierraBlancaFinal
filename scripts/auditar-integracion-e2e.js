@@ -259,8 +259,8 @@ async function main() {
       round2(haDaily[ENTITIES[0]].get(day).total + haDaily[ENTITIES[1]].get(day).total) : null;
     const totalRaw = ENTITIES.every((e) => rawDaily[e].has(day)) ?
       round2(rawDaily[ENTITIES[0]].get(day).total + rawDaily[ENTITIES[1]].get(day).total) : null;
-    const totalSql = di < 0 ? null : num(direct.totales && direct.totales.total);
-    const totalPortal = pi < 0 ? null : num(portal.totales && portal.totales.total);
+    const totalSql = di < 0 ? null : round2(Number(direct.plantaBaja[di]) + Number(direct.plantaAlta[di]));
+    const totalPortal = pi < 0 ? null : round2(Number(portal.plantaBaja[pi]) + Number(portal.plantaAlta[pi]));
     const totalErrors = [];
     if (totalHa === null) totalErrors.push("total HA no disponible");
     if (totalSql === null || !Number.isFinite(totalSql)) totalErrors.push("total SQL no disponible");
