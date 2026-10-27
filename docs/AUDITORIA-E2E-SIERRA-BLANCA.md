@@ -1,44 +1,46 @@
-# Auditoría E2E de Sierra Blanca
+# Auditoría de consumo de Sierra Blanca
 
-El workflow .github/workflows/auditoria-sierra-blanca-e2e.yml ejecuta el test cada lunes a las 03:00 de Europe/Madrid y también permite ejecución manual desde Actions.
+Hay dos workflows en GitHub Actions:
 
-## GitHub: secretos y variables
+1. **Auditoría automática Sierra Blanca**: se ejecuta cada lunes a las 03:00 (Europe/Madrid) y audita el día natural anterior completo.
+2. **Auditoría manual por fechas - Sierra Blanca**: permite elegir fecha inicial y final. Para auditar un solo día, usa la misma fecha en ambos campos.
 
-En Settings → Secrets and variables → Actions, crea estos Repository secrets:
+## Cómo ejecutar la auditoría manual
 
-- TS_OAUTH_CLIENT_ID: OAuth Client ID de Tailscale.
-- TS_OAUTH_SECRET: OAuth Client secret de Tailscale.
-- HA_BASE_URL: URL de HA accesible por Tailscale, por ejemplo http://100.x.y.z:8123.
-- HA_TOKEN: token de Home Assistant.
-- TURSO_DATABASE_URL: libsql://sierra-blanca-consumo-naravena.aws-eu-west-1.turso.io
-- TURSO_AUTH_TOKEN: token de Turso con permisos de lectura.
-- PORTAL_PASSWORD: contraseña usada para iniciar sesión en el portal.
+1. Abre la pestaña **Actions** del repositorio.
+2. Selecciona **Auditoría manual por fechas - Sierra Blanca**.
+3. Pulsa **Run workflow**.
+4. Introduce `fecha_inicio` y `fecha_fin` con formato `YYYY-MM-DD` (por ejemplo, `2026-10-01` en ambos campos para auditar el 1 de octubre).
+5. Pulsa **Run workflow** y abre el resumen de la ejecución.
 
-Crea también la Repository variable PORTAL_BASE_URL con el valor:
-https://historico-sierra-blanca-final.vercel.app
+El intervalo admite hasta 366 días por ejecución. Se consideran días completos de calendario en `Europe/Madrid`; la fecha final está incluida.
 
-No subas tokens ni contraseñas al repositorio.
+## Qué se compara
 
-## Tailscale
+- Consumo diario acumulado de Planta Baja (`sensor.sierra_blanca_energia_consumida_a`) y Planta Alta (`sensor.sierra_blanca_energia_consumida_b`).
+- Total de Sierra Blanca calculado como Planta Baja + Planta Alta.
+- Home Assistant frente a lecturas raw de Turso por consumo diario, tolerancia predeterminada ±0,05 kWh.
+- Cálculo SQL mediante `src/queries.js` frente a la API de consumo del portal.
+- Días marcados como incompletos por el cálculo del portal.
 
-1. Configura la etiqueta tag:ci en la consola de administración de Tailscale.
-2. Crea un OAuth client con permisos auth_keys y autorización para asignar tag:ci.
-3. En la política de acceso de Tailscale permite a tag:ci acceder únicamente al dispositivo Home Assistant por TCP 8123.
-4. Usa la IP Tailscale de HA en HA_BASE_URL. No expongas el puerto de HA a Internet.
-5. Guarda el Client ID y el Client secret como secretos de GitHub.
+No se incluye energía producida porque Sierra Blanca no tiene paneles solares. Tampoco se exige que cada muestra individual de HA tenga una pareja exacta en Turso: las frecuencias de registro pueden ser diferentes.
 
-Usa un token de Home Assistant asociado a un usuario dedicado con los permisos mínimos que permitan consultar el historial.
+## Secretos y variables
 
-## Qué valida
+Los workflows usan los secretos existentes:
 
-- Consulta el histórico de ambos sensores directamente desde la API de Home Assistant.
-- Consulta las lecturas raw del día en la tabla historical_data de Turso y compara timestamps, valores, cantidad de puntos y consumo diario.
-- Ejecuta la función de consulta del portal contra Turso directamente, sin pasar por la API web.
-- Inicia sesión en el portal y compara /api/consumo con el resultado SQL directo.
-- Falla el workflow si encuentra diferencias y publica el informe en el resumen de GitHub Actions.
+- `TS_OAUTH_CLIENT_ID`
+- `TS_OAUTH_SECRET`
+- `HA_BASE_URL`
+- `HA_TOKEN`
+- `TURSO_DATABASE_URL`
+- `TURSO_AUTH_TOKEN`
+- `PORTAL_PASSWORD`
 
-El test es de solo lectura. La tolerancia por defecto del consumo diario es 0.05 kWh.
+Y la variable `PORTAL_BASE_URL` (URL del portal).
 
-## Primera ejecución
+No añadas tokens ni contraseñas al repositorio. La auditoría es de solo lectura y usa Tailscale para acceder a Home Assistant sin exponerlo a Internet.
 
-Tras guardar secretos y variable, ve a Actions → Auditoría E2E Sierra Blanca → Run workflow. Revisa el resumen de ejecución. Si falla, el mensaje indicará la comprobación que no coincide.
+## Nota de interpretación
+
+El cálculo raw estima el consumo sumando las variaciones no negativas del contador entre muestras consecutivas. Si hay reinicios del contador, huecos largos o diferencias en la cobertura del historial, el resultado puede necesitar revisión. El informe separa el acumulado diario de las comprobaciones de consistencia.
