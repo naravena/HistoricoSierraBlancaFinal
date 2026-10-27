@@ -201,6 +201,12 @@ async function main() {
   report.push("## Comparación por día y planta", "");
   report.push("| Día | Planta | HA kWh | Turso raw kWh | Turso SQL kWh | Portal kWh | Estado |");
   report.push("|---|---|---:|---:|---:|---:|---|");
+  report.push("", "## Diagnóstico de cobertura de lecturas", "");
+  report.push("| Día | Planta | Muestras HA | Última muestra HA (Madrid) | Muestras Turso raw | Última muestra Turso (Madrid) |");
+  report.push("|---|---|---:|---|---:|---|");
+  const localStamp = (date) => date ? new Intl.DateTimeFormat("es-ES", {
+    timeZone: ZONE, dateStyle: "short", timeStyle: "medium", hour12: false,
+  }).format(date) : "Sin datos";
   let checkedDays = 0;
   for (let day = startDay; day <= endDay; day = shiftDay(day, 1)) {
     const di = directIndex(day), pi = portalIndex(day);
@@ -208,6 +214,11 @@ async function main() {
     for (const entity of ENTITIES) {
       const label = LABEL[entity];
       const h = haDaily[entity].get(day), t = rawDaily[entity].get(day);
+      const haPoints = (ha && ha[entity] || []).filter((r) => localDate(r.ts) === day);
+      const tursoPoints = (readings || []).filter((r) => r.entity_id === entity && localDate(r.ts) === day);
+      const lastHa = haPoints.length ? haPoints[haPoints.length - 1].ts : null;
+      const lastTurso = tursoPoints.length ? tursoPoints[tursoPoints.length - 1].ts : null;
+      report.push("| " + day + " | " + LABEL[entity] + " | " + haPoints.length + " | " + localStamp(lastHa) + " | " + tursoPoints.length + " | " + localStamp(lastTurso) + " |");
       const sqlValue = di < 0 ? null : Number(entity === ENTITIES[0] ? direct.plantaBaja[di] : direct.plantaAlta[di]);
       const webValue = pi < 0 ? null : Number(entity === ENTITIES[0] ? portal.plantaBaja[pi] : portal.plantaAlta[pi]);
       const errors = [];
