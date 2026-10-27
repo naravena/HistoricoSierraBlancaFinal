@@ -29,10 +29,10 @@ test("agrupa por día local de Málaga y marca cobertura parcial", async () => {
 
 test("atribuye al día de origen el delta que termina en la primera lectura tras medianoche", async () => {
   const db = mockDb([
-    { entity_id: "sensor.sierra_blanca_energia_consumida_a", origen: "reading", recorded_at: "2026-10-26T22:45:00+01:00", contador: 924.90 },
-    { entity_id: "sensor.sierra_blanca_energia_consumida_a", origen: "reading", recorded_at: "2026-10-26T23:00:00+01:00", contador: 924.91 },
-    { entity_id: "sensor.sierra_blanca_energia_consumida_b", origen: "reading", recorded_at: "2026-10-26T22:45:00+01:00", contador: 650.62 },
-    { entity_id: "sensor.sierra_blanca_energia_consumida_b", origen: "reading", recorded_at: "2026-10-26T23:00:00+01:00", contador: 651.02 },
+    { entity_id: "sensor.sierra_blanca_energia_consumida_a", origen: "reading", recorded_at: "2026-10-26T23:45:00+01:00", contador: 924.90 },
+    { entity_id: "sensor.sierra_blanca_energia_consumida_a", origen: "reading", recorded_at: "2026-10-27T00:00:00+01:00", contador: 924.91 },
+    { entity_id: "sensor.sierra_blanca_energia_consumida_b", origen: "reading", recorded_at: "2026-10-26T23:45:00+01:00", contador: 650.62 },
+    { entity_id: "sensor.sierra_blanca_energia_consumida_b", origen: "reading", recorded_at: "2026-10-27T00:00:00+01:00", contador: 651.02 },
   ]);
   const result = await consumoDiarioPorPlanta(db, "2026-10-26", "2026-10-26");
   assert.deepEqual(result.dias, ["2026-10-26"]);
