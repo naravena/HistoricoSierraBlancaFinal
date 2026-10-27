@@ -38,6 +38,12 @@ function nextDay(day) {
   return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
 }
 
+function dateRange(desde, hasta) {
+  const days = [];
+  for (let day = desde; day <= hasta; day = nextDay(day)) days.push(day);
+  return days;
+}
+
 async function consultarConsumo(db, desde, hasta) {
   const inicio = localMidnightUtc(desde).toISOString();
   const fin = localMidnightUtc(nextDay(hasta)).toISOString();
@@ -61,17 +67,27 @@ async function consultarConsumo(db, desde, hasta) {
             AND julianday(p.recorded_at) < julianday(?)
         )
       ),
+      siguientes AS (
+        SELECT f.entity_id, f.recorded_at, f.contador, f.origen
+        FROM fuentes f
+        WHERE julianday(f.recorded_at) = (
+          SELECT MIN(julianday(p.recorded_at)) FROM fuentes p
+          WHERE p.entity_id = f.entity_id AND p.origen = f.origen
+            AND julianday(p.recorded_at) >= julianday(?)
+        )
+      ),
       seleccion AS (
         SELECT entity_id, recorded_at, contador, origen FROM previos
         UNION ALL
         SELECT entity_id, recorded_at, contador, origen FROM fuentes
         WHERE julianday(recorded_at) >= julianday(?) AND julianday(recorded_at) < julianday(?)
+        UNION ALL
+        SELECT entity_id, recorded_at, contador, origen FROM siguientes
       )
       SELECT entity_id, recorded_at, contador, origen FROM seleccion
       ORDER BY entity_id, origen, julianday(recorded_at), recorded_at
     `,
-    args: ["sensor.sierra_blanca_energia_consumida_a", "sensor.sierra_blanca_energia_consumida_b",
-      "sensor.sierra_blanca_energia_consumida_a", "sensor.sierra_blanca_energia_consumida_b", inicio, inicio, fin],
+    args: [ENTITY_BAJA, ENTITY_ALTA, ENTITY_BAJA, ENTITY_ALTA, inicio, fin, inicio, fin],
   });
 
   const ordered = rows.map((r) => ({ ...r, instant: parseTimestamp(r.recorded_at) }))
@@ -86,15 +102,19 @@ async function consultarConsumo(db, desde, hasta) {
     const counter = Number(r.contador);
     const prior = previous.get(key);
     previous.set(key, { counter, instant: r.instant });
-    const day = localDate(r.instant);
-    if (day < desde || day > hasta || !prior) continue;
-    // El primer punto del día es la base del contador; no atribuir al día actual el delta de la noche anterior.
-    if (localDate(prior.instant) !== day) continue;
+    if (!prior) continue;
+
+    // Atribuimos cada incremento al día en que comienza el intervalo entre lecturas.
+    // Incluimos una lectura posterior al final del rango para no perder el último delta antes de medianoche.
+    const day = localDate(prior.instant);
+    if (day < desde || day > hasta) continue;
     const delta = counter >= prior.counter ? counter - prior.counter : 0;
     const groupKey = `${r.entity_id}|${day}|${r.origen}`;
-    const entry = bySourceDay.get(groupKey) || { entity_id: r.entity_id, dia: day, origen: r.origen, consumo: 0, ultimo: null };
+    const entry = bySourceDay.get(groupKey) || {
+      entity_id: r.entity_id, dia: day, origen: r.origen, consumo: 0, ultimo: null,
+    };
     entry.consumo += delta;
-    if (!entry.ultimo || r.instant > entry.ultimo) entry.ultimo = r.instant;
+    if (!entry.ultimo || prior.instant > entry.ultimo) entry.ultimo = prior.instant;
     bySourceDay.set(groupKey, entry);
   }
 
@@ -107,34 +127,51 @@ async function consultarConsumo(db, desde, hasta) {
     entity_id: r.entity_id,
     dia: r.dia,
     consumo: r.consumo,
-    incompleto: localMidnightUtc(nextDay(r.dia)).getTime() - r.ultimo.getTime() > 3600000 ? 1 : 0,
+    incompleto: !r.ultimo ||
+      localMidnightUtc(nextDay(r.dia)).getTime() - r.ultimo.getTime() > 3600000 ? 1 : 0,
   }));
 }
 
 async function consumoDiarioPorPlanta(db, desde, hasta) {
   const rows = await consultarConsumo(db, desde, hasta);
   const porDia = new Map();
-  for (const r of rows) {
-    if (!porDia.has(r.dia)) porDia.set(r.dia, { baja: 0, alta: 0, incompleto: false });
-    if (r.entity_id === "sensor.sierra_blanca_energia_consumida_a") porDia.get(r.dia).baja = Number(r.consumo || 0);
-    if (r.entity_id === "sensor.sierra_blanca_energia_consumida_b") porDia.get(r.dia).alta = Number(r.consumo || 0);
-    if (Number(r.incompleto) === 1) porDia.get(r.dia).incompleto = true;
+  for (const dia of dateRange(desde, hasta)) {
+    porDia.set(dia, { baja: 0, alta: 0, incompleto: false, entidades: new Set() });
   }
-  const dias = [...porDia.keys()].sort();
+  for (const r of rows) {
+    if (!porDia.has(r.dia)) continue;
+    const dia = porDia.get(r.dia);
+    if (r.entity_id === ENTITY_BAJA) {
+      dia.baja = Number(r.consumo || 0);
+      dia.entidades.add(ENTITY_BAJA);
+    }
+    if (r.entity_id === ENTITY_ALTA) {
+      dia.alta = Number(r.consumo || 0);
+      dia.entidades.add(ENTITY_ALTA);
+    }
+    if (Number(r.incompleto) === 1) dia.incompleto = true;
+  }
+  for (const dia of porDia.values()) {
+    if (dia.entidades.size < 2) dia.incompleto = true;
+  }
+  const dias = [...porDia.keys()];
   const plantaBaja = dias.map((d) => round2(porDia.get(d).baja));
   const plantaAlta = dias.map((d) => round2(porDia.get(d).alta));
   const baja = round2(plantaBaja.reduce((a, b) => a + b, 0));
   const alta = round2(plantaAlta.reduce((a, b) => a + b, 0));
-  return { dias, plantaBaja, plantaAlta, diasIncompletos: dias.filter((d) => porDia.get(d).incompleto),
-    totales: { baja, alta, total: round2(baja + alta) } };
+  return {
+    dias, plantaBaja, plantaAlta,
+    diasIncompletos: dias.filter((d) => porDia.get(d).incompleto),
+    totales: { baja, alta, total: round2(baja + alta) },
+  };
 }
 
 async function consumoTotalPorPlanta(db, desde, hasta) {
   const rows = await consultarConsumo(db, desde, hasta);
   const result = { baja: 0, alta: 0 };
   for (const r of rows) {
-    if (r.entity_id === "sensor.sierra_blanca_energia_consumida_a") result.baja += Number(r.consumo || 0);
-    if (r.entity_id === "sensor.sierra_blanca_energia_consumida_b") result.alta += Number(r.consumo || 0);
+    if (r.entity_id === ENTITY_BAJA) result.baja += Number(r.consumo || 0);
+    if (r.entity_id === ENTITY_ALTA) result.alta += Number(r.consumo || 0);
   }
   return { baja: round2(result.baja), alta: round2(result.alta) };
 }
