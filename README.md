@@ -64,3 +64,20 @@ En Project → Settings → Environment Variables configura `TURSO_DATABASE_URL`
 ## Cálculo del consumo
 
 El portal calcula consumo como diferencias positivas entre lecturas consecutivas, ignorando resets del contador. Incluye una lectura anterior al comienzo del periodo para calcular el primer incremento. Las fechas seleccionadas en el portal son inclusivas, incluido el día final. La ordenación usa la fecha/hora interpretada por SQLite para no depender del orden lexicográfico de timestamps con diferentes offsets.
+
+## Criterio de auditoría diaria
+
+La auditoría debe separar dos dimensiones y no mezclarlas:
+
+1. **Exactitud del sumatorio diario (criterio principal):** comparar, para cada planta y fecha local de Europe/Madrid, el consumo diario de Home Assistant con el consumo diario calculado por el portal. El día/planta pasa si la diferencia absoluta es menor o igual a 0,05 kWh. El total diario se calcula como Planta Baja + Planta Alta y se compara también con el total de Home Assistant.
+2. **Cobertura de lecturas (diagnóstico secundario):** informar por separado del número de muestras y la última hora disponible en Home Assistant y Turso. Una cantidad distinta de muestras o una última lectura más temprana en Turso debe generar una advertencia de cobertura, no un fallo automático del sumatorio si la diferencia de energía diaria está dentro de tolerancia.
+
+Estados recomendados:
+- `OK`: sumatorio diario dentro de tolerancia y datos suficientes para calcular ambas plantas.
+- `FALLO SUMATORIO`: una planta o el total diario supera la tolerancia de 0,05 kWh.
+- `COBERTURA PARCIAL`: faltan muestras, el último dato queda demasiado lejos del cierre del día o no hay datos suficientes para validar el sumatorio. Debe mostrarse aparte del resultado numérico.
+- `SIN DATOS`: no hay lecturas utilizables para una planta en ese día.
+
+No se deben comparar como si fueran equivalentes los **recuentos de muestras** ni los acumulados derivados de series con distinta frecuencia. Home Assistant puede conservar más estados que la automatización que envía una muestra cada 15 minutos a Turso. La frecuencia de captura no debe aumentarse solo para igualar recuentos: primero se debe comprobar la diferencia del sumatorio diario y la cobertura del cierre del día.
+
+**Ejemplo:** si Home Assistant suma 5,75 kWh y el portal 5,77 kWh, la diferencia es 0,02 kWh y pasa el umbral de 0,05 kWh. Si Turso tiene 96 muestras frente a 240 en Home Assistant, la cobertura debe señalarse como distinta, pero eso por sí solo no convierte el sumatorio en un fallo. Si el sumatorio está dentro de tolerancia pero faltan datos al cierre, el resultado global debe indicar «sumatorio OK; cobertura parcial», no ocultar la advertencia.
