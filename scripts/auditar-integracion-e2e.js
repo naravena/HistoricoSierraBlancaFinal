@@ -126,18 +126,21 @@ async function tursoReadings(dbUrl, token, start, end) {
 function dailyTotals(rows, startDay, endDay) {
   const sorted = rows.slice().sort((a, b) => a.ts - b.ts);
   const result = new Map();
+  let prior = null;
   for (const r of sorted) {
     const day = localDate(r.ts);
-    if (day < startDay || day > endDay) continue;
-    const prior = [...sorted].reverse().find((p) => p.ts < r.ts);
-    if (!prior) continue;
-    const delta = r.value >= prior.value ? r.value - prior.value : 0; // un reset no se cuenta como consumo negativo
-    const entry = result.get(day) || { total: 0, count: 0, first: null, last: null };
-    entry.total += delta;
-    entry.count++;
-    if (!entry.first) entry.first = r.ts;
-    entry.last = r.ts;
-    result.set(day, entry);
+    if (prior) {
+      const delta = r.value >= prior.value ? r.value - prior.value : 0; // un reset no se cuenta como consumo negativo
+      if (day >= startDay && day <= endDay) {
+        const entry = result.get(day) || { total: 0, count: 0, first: null, last: null };
+        entry.total += delta;
+        entry.count++;
+        if (!entry.first) entry.first = r.ts;
+        entry.last = r.ts;
+        result.set(day, entry);
+      }
+    }
+    prior = r;
   }
   for (const value of result.values()) value.total = round2(value.total);
   return result;
@@ -179,7 +182,8 @@ async function main() {
   ];
   try { ha = await haHistory(haBase, haToken, start, end); notes.push("Historial de Home Assistant consultado."); }
   catch (e) { failures.push("Home Assistant: " + e.message); }
-  try { readings = await tursoReadings(dbUrl, dbToken, start, end); notes.push("Lecturas raw de Turso consultadas."); }
+  const rawStart = midnightUtc(shiftDay(startDay, -1));
+  try { readings = await tursoReadings(dbUrl, dbToken, rawStart, end); notes.push("Lecturas raw de Turso consultadas, incluyendo una base previa al inicio."); }
   catch (e) { failures.push("Turso raw: " + e.message); }
   const db = { execute: async ({ sql, args }) => ({ rows: await tursoQuery(dbUrl, dbToken, sql, args || []) }) };
   try { direct = await consumoDiarioPorPlanta(db, startDay, endDay); notes.push("Cálculo SQL del portal ejecutado con src/queries.js."); }
