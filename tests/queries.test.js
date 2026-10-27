@@ -21,7 +21,7 @@ test("agrupa por día local de Málaga y marca cobertura parcial", async () => {
   assert.deepEqual(result.plantaAlta, [2.59]);
   assert.deepEqual(result.totales, { baja: 0.57, alta: 2.59, total: 3.16 });
   assert.deepEqual(result.diasIncompletos, ["2026-09-28"]);
-  assert.match(db.call.sql, /record_type = 'statistics'/);
+  assert.match(db.call.sql, /FROM historical_data/);\n  assert.match(db.call.sql, /record_type = 'statistics'/);\n  assert.doesNotMatch(db.call.sql, /FROM readings\\b/);
 });
 
 test("consumo total calcula deltas y deja a cero la planta sin registros", async () => {
