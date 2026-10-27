@@ -1,4 +1,4 @@
-/* Auditoría E2E de solo lectura: HA -> Turso -> API del portal. */
+/* Auditoría de consumo diario acumulado: Home Assistant -> Turso -> Portal. Solo lectura. */
 const { consumoDiarioPorPlanta } = require("../src/queries");
 const ZONE = "Europe/Madrid";
 const ENTITIES = [
@@ -7,8 +7,6 @@ const ENTITIES = [
 ];
 const LABEL = { [ENTITIES[0]]: "Planta baja", [ENTITIES[1]]: "Planta alta" };
 const KWH_TOL = Number(process.env.AUDIT_TOLERANCE_KWH || "0.05");
-const POINT_TOL = 0.01;
-const TIME_TOL_MS = 90000;
 const need = (key) => {
   if (!process.env[key]) throw new Error("Falta configurar " + key);
   return process.env[key];
@@ -33,10 +31,19 @@ function midnightUtc(day) {
   }
   return new Date(guess);
 }
-function lastSunday() {
-  const [y, m, d] = localDate(new Date()).split("-").map(Number);
-  const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-  return new Date(Date.UTC(y, m - 1, d - (weekday || 7))).toISOString().slice(0, 10);
+function shiftDay(day, amount) {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + amount)).toISOString().slice(0, 10);
+}
+function yesterdayLocal() {
+  return shiftDay(localDate(new Date()), -1);
+}
+function validDate(s, key) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || !Number.isFinite(Date.parse(s + "T00:00:00Z")) ||
+      new Date(s + "T00:00:00Z").toISOString().slice(0, 10) !== s) {
+    throw new Error(key + " debe tener formato YYYY-MM-DD.");
+  }
+  return s;
 }
 function timestamp(value) {
   const s = String(value);
@@ -59,8 +66,10 @@ async function jsonRequest(url, options) {
   }
   return { response, body };
 }
-async function haHistory(base, token, day, start, end) {
-  const url = new URL(base.replace(/\/+$/, "") + "/api/history/period/" + encodeURIComponent(start.toISOString()));
+async function haHistory(base, token, start, end) {
+  // Trae también el día anterior para disponer de una lectura base antes de la medianoche inicial.
+  const queryStart = midnightUtc(shiftDay(localDate(start), -1));
+  const url = new URL(base.replace(/\/+$/, "") + "/api/history/period/" + encodeURIComponent(queryStart.toISOString()));
   url.searchParams.set("filter_entity_id", ENTITIES.join(","));
   url.searchParams.set("end_time", end.toISOString());
   url.searchParams.set("minimal_response", "1");
@@ -71,7 +80,7 @@ async function haHistory(base, token, day, start, end) {
   ENTITIES.forEach((entity, index) => {
     out[entity] = (Array.isArray(result.body[index]) ? result.body[index] : [])
       .map((x) => ({ ts: timestamp(x.last_changed || x.last_updated), value: num(x.state) }))
-      .filter((x) => Number.isFinite(x.ts.getTime()) && x.value !== null && localDate(x.ts) === day)
+      .filter((x) => Number.isFinite(x.ts.getTime()) && x.value !== null && x.ts < end)
       .sort((a, b) => a.ts - b.ts);
   });
   return out;
@@ -85,7 +94,7 @@ async function tursoQuery(dbUrl, token, sql, args) {
     method: "POST",
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
     body: JSON.stringify({ requests: [
-      { type: "execute", stmt: { sql: sql, args: (args || []).map(enc) } },
+      { type: "execute", stmt: { sql, args: (args || []).map(enc) } },
       { type: "close" },
     ] }),
   });
@@ -114,37 +123,26 @@ async function tursoReadings(dbUrl, token, start, end) {
   return rows.map((r) => ({ entity_id: r.entity_id, ts: timestamp(r.recorded_at), value: num(r.value) }))
     .filter((r) => Number.isFinite(r.ts.getTime()) && r.value !== null);
 }
-function daily(rows, day) {
-  const points = rows.filter((r) => localDate(r.ts) === day).slice().sort((a, b) => a.ts - b.ts);
-  let total = 0;
-  for (let i = 1; i < points.length; i++) {
-    const delta = points[i].value - points[i - 1].value;
-    total += delta >= 0 ? delta : 0;
+function dailyTotals(rows, startDay, endDay) {
+  const sorted = rows.slice().sort((a, b) => a.ts - b.ts);
+  const result = new Map();
+  for (const r of sorted) {
+    const day = localDate(r.ts);
+    if (day < startDay || day > endDay) continue;
+    const prior = [...sorted].reverse().find((p) => p.ts < r.ts);
+    if (!prior) continue;
+    const delta = r.value >= prior.value ? r.value - prior.value : 0; // un reset no se cuenta como consumo negativo
+    const entry = result.get(day) || { total: 0, count: 0, first: null, last: null };
+    entry.total += delta;
+    entry.count++;
+    if (!entry.first) entry.first = r.ts;
+    entry.last = r.ts;
+    result.set(day, entry);
   }
-  return { total: round2(total), count: points.length, points };
+  for (const value of result.values()) value.total = round2(value.total);
+  return result;
 }
-function comparePoints(source, destination) {
-  const used = new Set(), errors = [];
-  for (const a of source) {
-    let best = -1, distance = Infinity;
-    for (let i = 0; i < destination.length; i++) {
-      if (used.has(i)) continue;
-      const d = Math.abs(destination[i].ts - a.ts);
-      if (d < distance) { best = i; distance = d; }
-    }
-    if (best < 0 || distance > TIME_TOL_MS) {
-      errors.push("falta en Turso la muestra de " + a.ts.toISOString());
-      continue;
-    }
-    used.add(best);
-    if (Math.abs(destination[best].value - a.value) > POINT_TOL) {
-      errors.push("valor distinto en " + a.ts.toISOString() + ": HA=" + a.value + ", Turso=" + destination[best].value);
-    }
-  }
-  return { matched: used.size, sourceCount: source.length, destinationCount: destination.length,
-    extras: destination.length - used.size, errors };
-}
-async function portalConsumption(base, password, day) {
+async function portalConsumption(base, password, startDay, endDay) {
   base = base.replace(/\/+$/, "");
   await jsonRequest(base + "/api/health", { headers: { Accept: "application/json" } });
   const login = await jsonRequest(base + "/api/auth/login", {
@@ -155,89 +153,91 @@ async function portalConsumption(base, password, day) {
   const cookie = (login.response.headers.get("set-cookie") || "").split(";")[0];
   if (!cookie.startsWith("session_token=")) throw new Error("No se recibió la cookie session_token.");
   const url = new URL(base + "/api/consumo");
-  url.searchParams.set("desde", day);
-  url.searchParams.set("hasta", day);
+  url.searchParams.set("desde", startDay);
+  url.searchParams.set("hasta", endDay);
   return (await jsonRequest(url, { headers: { Cookie: cookie, Accept: "application/json" } })).body;
 }
 async function main() {
-  const day = lastSunday();
-  const [y, m, d] = day.split("-").map(Number);
-  const nextDay = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
-  const start = midnightUtc(day), end = midnightUtc(nextDay);
+  const startDay = validDate(process.env.AUDIT_START_DATE || yesterdayLocal(), "AUDIT_START_DATE");
+  const endDay = validDate(process.env.AUDIT_END_DATE || startDay, "AUDIT_END_DATE");
+  if (endDay < startDay) throw new Error("La fecha final no puede ser anterior a la inicial.");
+  const dayCount = Math.round((Date.parse(endDay + "T00:00:00Z") - Date.parse(startDay + "T00:00:00Z")) / 86400000) + 1;
+  if (dayCount > 366) throw new Error("El intervalo máximo por ejecución es de 366 días.");
+  const start = midnightUtc(startDay), end = midnightUtc(shiftDay(endDay, 1));
   const haBase = need("HA_BASE_URL"), haToken = need("HA_TOKEN");
   const dbUrl = need("TURSO_DATABASE_URL"), dbToken = need("TURSO_AUTH_TOKEN");
   const portalBase = need("PORTAL_BASE_URL"), portalPassword = need("PORTAL_PASSWORD");
   const failures = [], notes = [];
   let ha = null, readings = null, direct = null, portal = null;
   const report = [
-    "# Auditoría Home Assistant → Turso → Portal", "",
-    "- **Día:** " + day + " (Europe/Madrid)",
+    "# Auditoría de consumo acumulado: Home Assistant → Turso → Portal", "",
+    "- **Período:** " + startDay + " a " + endDay + " (Europe/Madrid; días completos)",
     "- **Ventana UTC:** " + start.toISOString() + " — " + end.toISOString(),
-    "- **Tolerancia diaria:** ±" + KWH_TOL + " kWh", "",
+    "- **Tolerancia diaria:** ±" + KWH_TOL + " kWh",
+    "- **Criterio:** acumulado diario por contador; no se exige igualdad de timestamps ni número de muestras.",
+    "- **Total Sierra Blanca:** Planta Baja + Planta Alta. No se incluye energía producida.", "",
   ];
-  try { ha = await haHistory(haBase, haToken, day, start, end); notes.push("Historial de HA consultado."); }
+  try { ha = await haHistory(haBase, haToken, start, end); notes.push("Historial de Home Assistant consultado."); }
   catch (e) { failures.push("Home Assistant: " + e.message); }
-  try { readings = await tursoReadings(dbUrl, dbToken, start, end); notes.push("Lecturas raw consultadas directamente en Turso."); }
-  catch (e) { failures.push("Turso readings: " + e.message); }
+  try { readings = await tursoReadings(dbUrl, dbToken, start, end); notes.push("Lecturas raw de Turso consultadas."); }
+  catch (e) { failures.push("Turso raw: " + e.message); }
   const db = { execute: async ({ sql, args }) => ({ rows: await tursoQuery(dbUrl, dbToken, sql, args || []) }) };
-  try { direct = await consumoDiarioPorPlanta(db, day, day); notes.push("Cálculo SQL directo ejecutado con src/queries.js."); }
+  try { direct = await consumoDiarioPorPlanta(db, startDay, endDay); notes.push("Cálculo SQL del portal ejecutado con src/queries.js."); }
   catch (e) { failures.push("SQL directo de Turso: " + e.message); }
-  try { portal = await portalConsumption(portalBase, portalPassword, day); notes.push("API web: health, login y consumo comprobados."); }
+  try { portal = await portalConsumption(portalBase, portalPassword, startDay, endDay); notes.push("API del portal: health, login y consumo comprobados."); }
   catch (e) { failures.push("API web: " + e.message); }
 
-  const portalIndex = portal && Array.isArray(portal.dias) ? portal.dias.indexOf(day) : -1;
-  report.push("## Comparación por sensor", "");
-  report.push("| Sensor | Puntos HA | Puntos Turso | Coincidencias | HA kWh | Turso raw kWh | Turso SQL kWh | Portal kWh | Estado |");
-  report.push("|---|---:|---:|---:|---:|---:|---:|---:|---|");
+  const haDaily = {}, rawDaily = {};
   for (const entity of ENTITIES) {
-    const errors = [];
-    const haDay = ha ? daily(ha[entity] || [], day) : null;
-    const dbPoints = readings ? readings.filter((r) => r.entity_id === entity) : null;
-    const dbDay = dbPoints ? daily(dbPoints, day) : null;
-    const matches = haDay && dbDay ? comparePoints(haDay.points, dbPoints) : null;
-    if (!haDay) errors.push("no se pudieron obtener datos de HA");
-    if (!dbDay) errors.push("no se pudieron obtener lecturas de Turso");
-    if (!direct) errors.push("no se pudo calcular el resultado SQL esperado de Turso");
-    if (haDay && haDay.count < 2) errors.push("menos de 2 puntos en HA");
-    if (dbDay && dbDay.count < 2) errors.push("menos de 2 lecturas en Turso");
-    if (matches) {
-      errors.push.apply(errors, matches.errors.slice(0, 5));
-      if (matches.extras > 0) errors.push(matches.extras + " lecturas Turso extra sin pareja en HA");
-      if (matches.sourceCount !== matches.destinationCount) errors.push("cantidad de puntos distinta en origen/destino");
-    }
-    if (haDay && dbDay && Math.abs(haDay.total - dbDay.total) > KWH_TOL) {
-      errors.push("consumo diario HA/Turso raw difiere más de " + KWH_TOL + " kWh");
-    }
-    let sqlValue = null, webValue = null;
-    if (direct) {
-      const idx = direct.dias.indexOf(day);
-      if (idx < 0) errors.push("el SQL directo no devuelve el día");
-      else sqlValue = entity === ENTITIES[0] ? Number(direct.plantaBaja[idx]) : Number(direct.plantaAlta[idx]);
-      if (Array.isArray(direct.diasIncompletos) && direct.diasIncompletos.includes(day)) errors.push("Turso SQL marca el día incompleto");
-    }
-    if (portal) {
-      if (portalIndex < 0) errors.push("la API del portal no devuelve el día");
-      else {
-        webValue = entity === ENTITIES[0] ? Number(portal.plantaBaja[portalIndex]) : Number(portal.plantaAlta[portalIndex]);
-        if (!Number.isFinite(webValue)) errors.push("la API del portal devuelve un valor no numérico");
-        else if (sqlValue !== null && Math.abs(webValue - sqlValue) > 0.01) errors.push("API web distinta del SQL directo de Turso");
-      }
-      if (Array.isArray(portal.diasIncompletos) && portal.diasIncompletos.includes(day)) errors.push("la API del portal marca el día incompleto");
-    }
-    const fmt = (n) => n === null || n === undefined || !Number.isFinite(n) ? "N/D" : Number(n).toFixed(2);
-    report.push("| " + LABEL[entity] + " | " + (haDay ? haDay.count : "N/D") + " | " +
-      (dbDay ? dbDay.count : "N/D") + " | " + (matches ? matches.matched + "/" + matches.sourceCount : "N/D") +
-      " | " + fmt(haDay && haDay.total) + " | " + fmt(dbDay && dbDay.total) + " | " +
-      fmt(sqlValue) + " | " + fmt(webValue) + " | " + (errors.length ? "FALLO" : "OK") + " |");
-    errors.forEach((e) => failures.push(LABEL[entity] + ": " + e));
+    haDaily[entity] = ha ? dailyTotals(ha[entity] || [], startDay, endDay) : new Map();
+    rawDaily[entity] = readings ? dailyTotals(readings.filter((r) => r.entity_id === entity), startDay, endDay) : new Map();
   }
-  if (portal && portalIndex >= 0 && direct) {
-    const expected = round2(Number(direct.totales.baja) + Number(direct.totales.alta));
-    const actual = num(portal.totales && portal.totales.total);
-    if (actual === null || Math.abs(actual - expected) > 0.01) failures.push("Total portal=" + actual + " kWh; SQL Turso=" + expected + " kWh.");
+  const portalIndex = (day) => portal && Array.isArray(portal.dias) ? portal.dias.indexOf(day) : -1;
+  const directIndex = (day) => direct && Array.isArray(direct.dias) ? direct.dias.indexOf(day) : -1;
+  const fmt = (n) => n === null || n === undefined || !Number.isFinite(n) ? "N/D" : Number(n).toFixed(2);
+  report.push("## Comparación por día y planta", "");
+  report.push("| Día | Planta | HA kWh | Turso raw kWh | Turso SQL kWh | Portal kWh | Estado |");
+  report.push("|---|---|---:|---:|---:|---:|---|");
+  let checkedDays = 0;
+  for (let day = startDay; day <= endDay; day = shiftDay(day, 1)) {
+    const di = directIndex(day), pi = portalIndex(day);
+    const dayFailures = [];
+    for (const entity of ENTITIES) {
+      const label = LABEL[entity];
+      const h = haDaily[entity].get(day), t = rawDaily[entity].get(day);
+      const sqlValue = di < 0 ? null : Number(entity === ENTITIES[0] ? direct.plantaBaja[di] : direct.plantaAlta[di]);
+      const webValue = pi < 0 ? null : Number(entity === ENTITIES[0] ? portal.plantaBaja[pi] : portal.plantaAlta[pi]);
+      const errors = [];
+      if (!h || h.count < 1) errors.push("sin suficientes cambios de contador en HA");
+      if (!t || t.count < 1) errors.push("sin suficientes cambios de contador en Turso raw");
+      if (h && t && Math.abs(h.total - t.total) > KWH_TOL) errors.push("HA/Turso raw difieren más de " + KWH_TOL + " kWh");
+      if (sqlValue === null || !Number.isFinite(sqlValue)) errors.push("SQL no devuelve valor diario");
+      if (webValue === null || !Number.isFinite(webValue)) errors.push("portal no devuelve valor diario");
+      if (Number.isFinite(sqlValue) && Number.isFinite(webValue) && Math.abs(sqlValue - webValue) > 0.01) errors.push("portal y SQL no coinciden");
+      if (direct && Array.isArray(direct.diasIncompletos) && direct.diasIncompletos.includes(day)) errors.push("SQL marca el día incompleto");
+      if (portal && Array.isArray(portal.diasIncompletos) && portal.diasIncompletos.includes(day)) errors.push("portal marca el día incompleto");
+      report.push("| " + day + " | " + label + " | " + fmt(h && h.total) + " | " + fmt(t && t.total) + " | " + fmt(sqlValue) + " | " + fmt(webValue) + " | " + (errors.length ? "FALLO" : "OK") + " |");
+      errors.forEach((e) => dayFailures.push(day + " · " + label + ": " + e));
+    }
+    const totalHa = ENTITIES.every((e) => haDaily[e].has(day)) ? round2(haDaily[ENTITIES[0]].get(day).total + haDaily[ENTITIES[1]].get(day).total) : null;
+    const totalRaw = ENTITIES.every((e) => rawDaily[e].has(day)) ? round2(rawDaily[ENTITIES[0]].get(day).total + rawDaily[ENTITIES[1]].get(day).total) : null;
+    const totalSql = di < 0 ? null : num(direct.totales && direct.totales.total);
+    const totalPortal = pi < 0 ? null : num(portal.totales && portal.totales.total);
+    const totalErrors = [];
+    if (totalHa === null) totalErrors.push("total HA no disponible");
+    if (totalRaw === null) totalErrors.push("total Turso raw no disponible");
+    if (totalHa !== null && totalRaw !== null && Math.abs(totalHa - totalRaw) > KWH_TOL) totalErrors.push("total HA/Turso raw difiere más de " + KWH_TOL + " kWh");
+    if (totalSql === null || totalPortal === null || Math.abs(totalSql - totalPortal) > 0.01) totalErrors.push("total SQL/portal no coincide o no está disponible");
+    report.push("| " + day + " | **Total Sierra Blanca** | **" + fmt(totalHa) + "** | **" + fmt(totalRaw) + "** | **" + fmt(totalSql) + "** | **" + fmt(totalPortal) + "** | **" + (totalErrors.length ? "FALLO" : "OK") + "** |");
+    totalErrors.forEach((e) => dayFailures.push(day + " · Total Sierra Blanca: " + e));
+    if (dayFailures.length) failures.push.apply(failures, dayFailures);
+    checkedDays++;
   }
   report.push("", "## Comprobaciones", "");
   notes.forEach((x) => report.push("- ✅ " + x));
+  report.push("- Días evaluados: " + checkedDays + ".");
+  report.push("- Sensores incluidos: energía consumida Planta Baja (A) y Planta Alta (B).");
+  report.push("- El total se calcula como A + B; la energía producida queda excluida.");
   failures.forEach((x) => report.push("- ❌ " + x));
   if (!failures.length) report.push("- ✅ Todas las comprobaciones han pasado.");
   report.push("", "**Resultado final: " + (failures.length ? "FALLO" : "OK") + "**", "");
