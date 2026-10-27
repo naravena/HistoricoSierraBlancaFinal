@@ -9,7 +9,7 @@ El portal lee el histórico desde `historical_data`, que conserva en una misma t
 - `record_type = 'reading'`: lecturas originales, con `value` y su timestamp.
 - `record_type = 'statistics'`: estadísticas de Home Assistant, conservando `mean`, `mean_weight`, `min`, `max`, `last_reset_at`, `state` y `sum`.
 
-Las tablas antiguas `readings` y `energy_statistics` se mantienen como respaldo; el portal no las consulta. No las borres hasta completar las comprobaciones.
+Las tablas antiguas `readings` y `energy_statistics` quedan **deprecadas** y se mantienen en Turso como respaldo; no deben recibir nuevas escrituras ni ser consultadas por el portal. No las borres. Home Assistant y la web deben usar exclusivamente `historical_data`. Consulta [la guía de integración de Home Assistant](docs/INTEGRACION-HOME-ASSISTANT-TURSO.md) para actualizar la automatización.
 
 ## Configuración local
 
