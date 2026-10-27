@@ -1,0 +1,55 @@
+name: Auditoría manual por fechas - Sierra Blanca
+
+on:
+  workflow_dispatch:
+    inputs:
+      fecha_inicio:
+        description: "Fecha inicial (YYYY-MM-DD), incluida"
+        required: true
+        type: string
+        default: "2026-10-01"
+      fecha_fin:
+        description: "Fecha final (YYYY-MM-DD), incluida; igual a inicio para un solo día"
+        required: true
+        type: string
+        default: "2026-10-01"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: auditoria-sierra-blanca
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Auditoría del intervalo elegido
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HA_BASE_URL: ${{ secrets.HA_BASE_URL }}
+      HA_TOKEN: ${{ secrets.HA_TOKEN }}
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      PORTAL_BASE_URL: ${{ vars.PORTAL_BASE_URL }}
+      PORTAL_PASSWORD: ${{ secrets.PORTAL_PASSWORD }}
+      AUDIT_TOLERANCE_KWH: "0.05"
+      AUDIT_START_DATE: ${{ inputs.fecha_inicio }}
+      AUDIT_END_DATE: ${{ inputs.fecha_fin }}
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Conectar runner a Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+      - name: Auditar fechas elegidas
+        run: node scripts/auditar-integracion-e2e.js
