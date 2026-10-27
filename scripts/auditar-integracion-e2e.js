@@ -129,16 +129,15 @@ function dailyTotals(rows, startDay, endDay) {
   let prior = null;
   for (const r of sorted) {
     const day = localDate(r.ts);
-    if (prior) {
-      const delta = r.value >= prior.value ? r.value - prior.value : 0; // un reset no se cuenta como consumo negativo
-      if (day >= startDay && day <= endDay) {
-        const entry = result.get(day) || { total: 0, count: 0, first: null, last: null };
-        entry.total += delta;
-        entry.count++;
-        if (!entry.first) entry.first = r.ts;
-        entry.last = r.ts;
-        result.set(day, entry);
-      }
+    if (prior && localDate(prior.ts) === day && day >= startDay && day <= endDay) {
+      // Mismo criterio que el cálculo del portal: no atribuir al día el delta desde el día anterior.
+      const delta = r.value >= prior.value ? r.value - prior.value : 0;
+      const entry = result.get(day) || { total: 0, count: 0, first: null, last: null };
+      entry.total += delta;
+      entry.count++;
+      if (!entry.first) entry.first = r.ts;
+      entry.last = r.ts;
+      result.set(day, entry);
     }
     prior = r;
   }
