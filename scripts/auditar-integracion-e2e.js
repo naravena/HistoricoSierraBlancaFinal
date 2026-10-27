@@ -189,7 +189,7 @@ async function main() {
   catch (e) { failures.push("Home Assistant: " + e.message); }
   const rawStart = midnightUtc(shiftDay(startDay, -1));
   try { readings = await tursoReadings(dbUrl, dbToken, rawStart, end); notes.push("Lecturas raw de Turso consultadas, incluyendo una base previa al inicio y una lectura posterior al cierre."); }
-  catch (e) { failures.push("Turso raw: " + e.message); }
+  catch (e) { warnings.push("Turso raw no disponible para diagnóstico de cobertura: " + e.message); }
   const db = { execute: async ({ sql, args }) => ({ rows: await tursoQuery(dbUrl, dbToken, sql, args || []) }) };
   try { direct = await consumoDiarioPorPlanta(db, startDay, endDay); notes.push("Cálculo SQL del portal ejecutado con src/queries.js."); }
   catch (e) { failures.push("SQL directo de Turso: " + e.message); }
