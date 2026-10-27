@@ -24,7 +24,7 @@ test("agrupa por día local de Málaga y marca cobertura parcial", async () => {
   assert.match(db.call.sql, /FROM historical_data/);
   assert.match(db.call.sql, /record_type = 'statistics'/);
   assert.match(db.call.sql, /siguientes AS/);
-  assert.doesNotMatch(db.call.sql, /FROM readings\\b/);
+  assert.doesNotMatch(db.call.sql, /FROM readings\b/);
 });
 
 test("atribuye al día de origen el delta que termina en la primera lectura tras medianoche", async () => {
