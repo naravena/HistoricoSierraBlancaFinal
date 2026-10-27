@@ -125,6 +125,51 @@ async function tursoReadings(dbUrl, token, start, end) {
   return rows.map((r) => ({ entity_id: r.entity_id, ts: timestamp(r.recorded_at), value: num(r.value) }))
     .filter((r) => Number.isFinite(r.ts.getTime()) && r.value !== null);
 }
+function auditTransferredReadings(haRows, tursoRows, day) {
+  const source = (haRows || []).filter((r) => r.ts.getTime() <= midnightUtc(shiftDay(day, 1)).getTime())
+    .slice().sort((a, b) => a.ts - b.ts);
+  const target = (tursoRows || []).filter((r) => localDate(r.ts) === day)
+    .slice().sort((a, b) => a.ts - b.ts);
+  const details = { total: target.length, matched: 0, mismatched: 0, noSource: 0, stale: 0, duplicates: 0, maxGapMinutes: null, mismatchExamples: [] };
+  const seen = new Set();
+  let priorTs = null;
+  for (const row of target) {
+    const tsKey = row.ts.toISOString();
+    if (seen.has(tsKey)) details.duplicates++;
+    seen.add(tsKey);
+    if (priorTs) {
+      const gap = (row.ts - priorTs) / 60000;
+      details.maxGapMinutes = Math.max(details.maxGapMinutes || 0, gap);
+    }
+    priorTs = row.ts;
+    let lo = 0, hi = source.length - 1, candidate = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (source[mid].ts <= row.ts) { candidate = mid; lo = mid + 1; }
+      else hi = mid - 1;
+    }
+    if (candidate < 0) {
+      details.noSource++;
+      continue;
+    }
+    const src = source[candidate];
+    const ageMinutes = (row.ts - src.ts) / 60000;
+    if (ageMinutes > 60) details.stale++;
+    if (Math.abs(row.value - src.value) > 0.011) {
+      details.mismatched++;
+      if (details.mismatchExamples.length < 3) {
+        details.mismatchExamples.push(localStampForAudit(row.ts) + ": Turso=" + row.value + ", HA previa=" + src.value + ", diferencia=" + (row.value - src.value).toFixed(3) + " kWh");
+      }
+    } else {
+      details.matched++;
+    }
+  }
+  return details;
+}
+function localStampForAudit(date) {
+  return new Intl.DateTimeFormat("es-ES", { timeZone: ZONE, dateStyle: "short", timeStyle: "medium", hour12: false }).format(date);
+}
+
 function dailyTotals(rows, startDay, endDay) {
   const sorted = rows.slice().sort((a, b) => a.ts - b.ts);
   const result = new Map();
@@ -204,7 +249,7 @@ async function main() {
   const portalIndex = (day) => portal && Array.isArray(portal.dias) ? portal.dias.indexOf(day) : -1;
   const directIndex = (day) => direct && Array.isArray(direct.dias) ? direct.dias.indexOf(day) : -1;
   const fmt = (n) => n === null || n === undefined || !Number.isFinite(n) ? "N/D" : Number(n).toFixed(2);
-  const comparisonRows = [], coverageRows = [];
+  const comparisonRows = [], coverageRows = [], transferRows = [];
   const localStamp = (date) => date ? new Intl.DateTimeFormat("es-ES", {
     timeZone: ZONE, dateStyle: "short", timeStyle: "medium", hour12: false,
   }).format(date) : "Sin datos";
@@ -222,6 +267,21 @@ async function main() {
       const lastHa = haPoints.length ? haPoints[haPoints.length - 1].ts : null;
       const lastTurso = tursoPoints.length ? tursoPoints[tursoPoints.length - 1].ts : null;
       coverageRows.push("| " + day + " | " + label + " | " + haPoints.length + " | " + localStamp(lastHa) + " | " + tursoPoints.length + " | " + localStamp(lastTurso) + " |");
+
+      const transfer = auditTransferredReadings(
+        ha ? ha[entity] || [] : [],
+        (readings || []).filter((r) => r.entity_id === entity),
+        day
+      );
+      transferRows.push("| " + day + " | " + label + " | " + transfer.total + " | " + transfer.matched + " | " +
+        transfer.mismatched + " | " + transfer.noSource + " | " + transfer.duplicates + " | " +
+        (transfer.maxGapMinutes === null ? "N/D" : transfer.maxGapMinutes.toFixed(1)) + " | " + transfer.stale + " |");
+      if (transfer.mismatched) dayFailures.push(day + " · " + label + ": " + transfer.mismatched + " lecturas Turso no coinciden con el último estado previo de HA (tolerancia 0,011 kWh)." +
+        (transfer.mismatchExamples.length ? " Ejemplos: " + transfer.mismatchExamples.join("; ") : ""));
+      if (transfer.noSource) dayFailures.push(day + " · " + label + ": " + transfer.noSource + " lecturas Turso sin estado previo de HA para validar el origen.");
+      if (transfer.duplicates) dayFailures.push(day + " · " + label + ": " + transfer.duplicates + " timestamps duplicados en Turso raw.");
+      if (transfer.stale) dayWarnings.push(day + " · " + label + ": " + transfer.stale + " lecturas usan un estado HA anterior a más de 60 minutos.");
+      if (transfer.maxGapMinutes !== null && transfer.maxGapMinutes > 30) dayWarnings.push(day + " · " + label + ": hueco máximo entre lecturas Turso de " + transfer.maxGapMinutes.toFixed(1) + " minutos (>30 min).");
 
       const sqlValue = di < 0 ? null : Number(entity === ENTITIES[0] ? direct.plantaBaja[di] : direct.plantaAlta[di]);
       const webValue = pi < 0 ? null : Number(entity === ENTITIES[0] ? portal.plantaBaja[pi] : portal.plantaAlta[pi]);
@@ -300,12 +360,18 @@ async function main() {
   report.push("| Día | Planta | Muestras HA | Última muestra HA (Madrid) | Muestras Turso raw | Última muestra Turso (Madrid) |");
   report.push("|---|---|---:|---|---:|---|");
   report.push(...coverageRows);
+  report.push("", "## Verificación de transferencia HA → Turso raw", "");
+  report.push("Cada lectura raw se contrasta con el último estado disponible en Home Assistant en o antes de su timestamp. La diferencia permitida es 0,011 kWh por redondeo del contador. Las lecturas sin origen, valores distintos o timestamps duplicados hacen fallar la auditoría.", "");
+  report.push("| Día | Planta | Lecturas Turso | Coinciden con HA | Diferencias | Sin estado HA previo | Duplicados | Hueco máximo (min) | Estado HA >60 min |");
+  report.push("|---|---|---:|---:|---:|---:|---:|---:|---:|");
+  report.push(...transferRows);
   report.push("", "## Comprobaciones", "");
   notes.forEach((x) => report.push("- ✅ " + x));
   report.push("- Días evaluados: " + checkedDays + ".");
   report.push("- Sensores incluidos: energía consumida Planta Baja (A) y Planta Alta (B).");
   report.push("- El total se calcula como A + B; la energía producida queda excluida.");
-  report.push("- La diferencia HA/Turso raw y la cobertura son diagnósticos; no suspenden el sumatorio por sí solos.");
+  report.push("- La diferencia del sumatorio se evalúa por separado de la integridad de cada lectura transferida.");
+  report.push("- Cada lectura Turso raw debe coincidir con el último estado previo de HA dentro de 0,011 kWh; diferencias, origen ausente o timestamps duplicados suspenden la auditoría.");
   warnings.forEach((x) => report.push("- ⚠️ " + x));
   failures.forEach((x) => report.push("- ❌ " + x));
   if (!failures.length && warnings.length) report.push("- ✅ Sumatorios dentro de tolerancia; hay advertencias de cobertura.");
