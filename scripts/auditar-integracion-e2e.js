@@ -264,9 +264,11 @@ async function main() {
       const h = haDaily[entity].get(day), t = rawDaily[entity].get(day);
       const haPoints = (ha && ha[entity] || []).filter((r) => localDate(r.ts) === day);
       const tursoPoints = (readings || []).filter((r) => r.entity_id === entity && localDate(r.ts) === day);
+      const firstHa = haPoints.length ? haPoints[0].ts : null;
       const lastHa = haPoints.length ? haPoints[haPoints.length - 1].ts : null;
+      const firstTurso = tursoPoints.length ? tursoPoints[0].ts : null;
       const lastTurso = tursoPoints.length ? tursoPoints[tursoPoints.length - 1].ts : null;
-      coverageRows.push("| " + day + " | " + label + " | " + haPoints.length + " | " + localStamp(lastHa) + " | " + tursoPoints.length + " | " + localStamp(lastTurso) + " |");
+      coverageRows.push("| " + day + " | " + label + " | " + haPoints.length + " | " + localStamp(firstHa) + " | " + localStamp(lastHa) + " | " + tursoPoints.length + " | " + localStamp(firstTurso) + " | " + localStamp(lastTurso) + " |");
 
       const transfer = auditTransferredReadings(
         ha ? ha[entity] || [] : [],
@@ -302,8 +304,11 @@ async function main() {
 
       const coverageIssues = [];
       if (!t || t.count < 1) coverageIssues.push("sin suficientes intervalos en Turso raw");
-      if (!lastHa || midnightAfter(day) - lastHa.getTime() > 3600000) coverageIssues.push("cierre diario de HA a más de 1 h de medianoche");
-      if (!lastTurso || midnightAfter(day) - lastTurso.getTime() > 3600000) coverageIssues.push("cierre diario de Turso a más de 1 h de medianoche");
+      const dayStartMs = midnightUtc(day).getTime();
+      if (!firstTurso || firstTurso.getTime() - dayStartMs > 30 * 60000) coverageIssues.push("primera lectura Turso más de 30 min después del inicio del día");
+      if (!lastTurso || midnightAfter(day) - lastTurso.getTime() > 30 * 60000) coverageIssues.push("última lectura Turso más de 30 min antes del cierre del día");
+      if (!firstHa || firstHa.getTime() - dayStartMs > 60 * 60000) coverageIssues.push("primera muestra HA más de 1 h después del inicio del día");
+      if (!lastHa || midnightAfter(day) - lastHa.getTime() > 60 * 60000) coverageIssues.push("última muestra HA más de 1 h antes del cierre del día");
       if (h && t && h.count > 0 && t.count > 0 && Math.abs(h.total - t.total) > KWH_TOL) {
         coverageIssues.push("HA/Turso raw difieren " + fmt(Math.abs(h.total - t.total)) + " kWh; revisar frecuencia/cobertura");
       }
@@ -357,8 +362,8 @@ async function main() {
   report.push("|---|---|---:|---:|---:|---:|---|");
   report.push(...comparisonRows);
   report.push("", "## Diagnóstico de cobertura de lecturas", "");
-  report.push("| Día | Planta | Muestras HA | Última muestra HA (Madrid) | Muestras Turso raw | Última muestra Turso (Madrid) |");
-  report.push("|---|---|---:|---|---:|---|");
+  report.push("| Día | Planta | Muestras HA | Primera muestra HA | Última muestra HA | Muestras Turso raw | Primera lectura Turso | Última lectura Turso |");
+  report.push("|---|---|---:|---|---|---:|---|---|");
   report.push(...coverageRows);
   report.push("", "## Verificación de transferencia HA → Turso raw", "");
   report.push("Cada lectura raw se contrasta con el último estado disponible en Home Assistant en o antes de su timestamp. La diferencia permitida es 0,011 kWh por redondeo del contador. Las lecturas sin origen, valores distintos o timestamps duplicados hacen fallar la auditoría.", "");
