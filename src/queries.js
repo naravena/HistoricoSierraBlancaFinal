@@ -5,7 +5,7 @@ const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 function parseTimestamp(value) {
   const text = String(value);
-  return new Date(/[zZ]|[+-]\\d\\d:\\d\\d$/.test(text) ? text : text.replace(" ", "T") + "Z");
+  return new Date(/[zZ]|[+-]\d\d:\d\d$/.test(text) ? text : text.replace(" ", "T") + "Z");
 }
 
 function localDate(date) {
