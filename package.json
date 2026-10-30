@@ -11,7 +11,8 @@
     "turso:init": "node scripts/init-turso.js",
     "turso:importar": "node scripts/importar-readings.js",
     "turso:huecos": "node scripts/auditar-huecos.js",
-    "turso:auditar": "node scripts/auditar-historico.js"
+    "turso:auditar": "node scripts/auditar-historico.js",
+    "turso:recuperar-octubre-2026": "node scripts/recuperar-cierres-diarios-octubre-2026.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
