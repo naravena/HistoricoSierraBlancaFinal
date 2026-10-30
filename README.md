@@ -18,6 +18,19 @@ Las tablas antiguas `readings` y `energy_statistics` quedan **deprecadas** y se 
 3. Ejecuta `pnpm turso:init` para crear la tabla histórica e índices si no existen.
 4. Inicia con `pnpm dev` y abre http://localhost:3000.
 
+## Recuperar cierres diarios de octubre de 2026
+
+Para incorporar los cierres acumulados recuperados desde Home Assistant del 26 al 29 de octubre (incluye el día 26 como referencia inicial), ejecuta:
+
+~~~bash
+pnpm install
+pnpm turso:recuperar-octubre-2026
+~~~
+
+El importador añade 8 filas con `record_type = 'daily_recovery'`, una por planta y día. Son cierres del contador acumulado, no lecturas de 15 minutos ni consumos diarios. El portal calcula las diferencias entre cierres consecutivos y las atribuye al día del cierre. Para esos días, los cierres recuperados tienen prioridad sobre lecturas/estadísticas parciales; los registros originales no se borran ni modifican. El script es idempotente: puede repetirse sin duplicar las filas.
+
+La recuperación cubre el 27, 28 y 29 de octubre. El cierre del 26 solo sirve como base de cálculo. No se introduce el 30 de octubre porque el dato facilitado era parcial, no un cierre diario.
+
 ## Importar nuevas lecturas CSV
 
 El CSV debe estar en UTF-8 y contener estas cabeceras:
