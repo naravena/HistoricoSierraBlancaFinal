@@ -60,3 +60,23 @@ test("consumo total calcula deltas y deja a cero la planta sin registros", async
   ]);
   assert.deepEqual(await consumoTotalPorPlanta(db, "2026-10-02", "2026-10-02"), { baja: 0, alta: 12.35 });
 });
+
+
+test("prioriza cierres diarios recuperados y atribuye cada delta al día del cierre", async () => {
+  const db = mockDb([
+    { entity_id: "sensor.sierra_blanca_energia_consumida_a", origen: "daily_recovery", recorded_at: "2026-10-26T23:59:32+01:00", contador: 924.91 },
+    { entity_id: "sensor.sierra_blanca_energia_consumida_a", origen: "daily_recovery", recorded_at: "2026-10-27T23:45:14+01:00", contador: 928.36 },
+    { entity_id: "sensor.sierra_blanca_energia_consumida_a", origen: "daily_recovery", recorded_at: "2026-10-28T23:48:27+01:00", contador: 930.11 },
+    { entity_id: "sensor.sierra_blanca_energia_consumida_a", origen: "daily_recovery", recorded_at: "2026-10-29T23:48:19+01:00", contador: 932.52 },
+    { entity_id: "sensor.sierra_blanca_energia_consumida_b", origen: "daily_recovery", recorded_at: "2026-10-26T23:59:32+01:00", contador: 651.02 },
+    { entity_id: "sensor.sierra_blanca_energia_consumida_b", origen: "daily_recovery", recorded_at: "2026-10-27T23:58:32+01:00", contador: 656.04 },
+    { entity_id: "sensor.sierra_blanca_energia_consumida_b", origen: "daily_recovery", recorded_at: "2026-10-28T23:54:26+01:00", contador: 662.86 },
+    { entity_id: "sensor.sierra_blanca_energia_consumida_b", origen: "daily_recovery", recorded_at: "2026-10-29T23:59:24+01:00", contador: 667.08 },
+  ]);
+  const result = await consumoDiarioPorPlanta(db, "2026-10-27", "2026-10-29");
+  assert.deepEqual(result.plantaBaja, [3.45, 1.75, 2.41]);
+  assert.deepEqual(result.plantaAlta, [5.02, 6.82, 4.22]);
+  assert.deepEqual(result.totales, { baja: 7.61, alta: 16.06, total: 23.67 });
+  assert.deepEqual(result.diasIncompletos, []);
+  assert.match(db.call.sql, /record_type = 'daily_recovery'/);
+});
