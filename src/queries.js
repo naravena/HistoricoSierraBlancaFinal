@@ -5,7 +5,7 @@ const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 function parseTimestamp(value) {
   const text = String(value);
-  return new Date(/[zZ]|[+-]\d\d:\d\d$/.test(text) ? text : text.replace(" ", "T") + "Z");
+  return new Date(/[zZ]|[+-]\\d\\d:\\d\\d$/.test(text) ? text : text.replace(" ", "T") + "Z");
 }
 
 function localDate(date) {
@@ -57,6 +57,10 @@ async function consultarConsumo(db, desde, hasta) {
         SELECT entity_id, recorded_at, sum AS contador, 'statistics' AS origen
         FROM historical_data
         WHERE record_type = 'statistics' AND entity_id IN (?, ?) AND sum IS NOT NULL
+        UNION ALL
+        SELECT entity_id, recorded_at, value AS contador, 'daily_recovery' AS origen
+        FROM historical_data
+        WHERE record_type = 'daily_recovery' AND entity_id IN (?, ?) AND value IS NOT NULL
       ),
       previos AS (
         SELECT f.entity_id, f.recorded_at, f.contador, f.origen
@@ -87,7 +91,8 @@ async function consultarConsumo(db, desde, hasta) {
       SELECT entity_id, recorded_at, contador, origen FROM seleccion
       ORDER BY entity_id, origen, julianday(recorded_at), recorded_at
     `,
-    args: [ENTITY_BAJA, ENTITY_ALTA, ENTITY_BAJA, ENTITY_ALTA, inicio, fin, inicio, fin],
+    args: [ENTITY_BAJA, ENTITY_ALTA, ENTITY_BAJA, ENTITY_ALTA,
+      ENTITY_BAJA, ENTITY_ALTA, inicio, fin, inicio, fin],
   });
 
   const ordered = rows.map((r) => ({ ...r, instant: parseTimestamp(r.recorded_at) }))
@@ -104,9 +109,9 @@ async function consultarConsumo(db, desde, hasta) {
     previous.set(key, { counter, instant: r.instant });
     if (!prior) continue;
 
-    // Atribuimos cada incremento al día en que comienza el intervalo entre lecturas.
-    // Incluimos una lectura posterior al final del rango para no perder el último delta antes de medianoche.
-    const day = localDate(prior.instant);
+    // Las lecturas normales atribuyen el incremento al inicio del intervalo.
+    // Los cierres recuperados atribuyen el delta al día del cierre (día actual).
+    const day = r.origen === "daily_recovery" ? localDate(r.instant) : localDate(prior.instant);
     if (day < desde || day > hasta) continue;
     const delta = counter >= prior.counter ? counter - prior.counter : 0;
     const groupKey = `${r.entity_id}|${day}|${r.origen}`;
@@ -114,14 +119,18 @@ async function consultarConsumo(db, desde, hasta) {
       entity_id: r.entity_id, dia: day, origen: r.origen, consumo: 0, ultimo: null,
     };
     entry.consumo += delta;
-    if (!entry.ultimo || prior.instant > entry.ultimo) entry.ultimo = prior.instant;
+    const coverageInstant = r.origen === "daily_recovery" ? r.instant : prior.instant;
+    if (!entry.ultimo || coverageInstant > entry.ultimo) entry.ultimo = coverageInstant;
     bySourceDay.set(groupKey, entry);
   }
 
   const sourceRows = [...bySourceDay.values()];
+  const recoveryDays = new Set(sourceRows.filter((r) => r.origen === "daily_recovery").map((r) => `${r.entity_id}|${r.dia}`));
   const statsDays = new Set(sourceRows.filter((r) => r.origen === "statistics").map((r) => `${r.entity_id}|${r.dia}`));
-  const selected = sourceRows.filter((r) => r.origen === "statistics" ||
-    (r.origen === "reading" && !statsDays.has(`${r.entity_id}|${r.dia}`)));
+  const selected = sourceRows.filter((r) => r.origen === "daily_recovery" ||
+    (r.origen === "statistics" && !recoveryDays.has(`${r.entity_id}|${r.dia}`)) ||
+    (r.origen === "reading" && !recoveryDays.has(`${r.entity_id}|${r.dia}`) &&
+      !statsDays.has(`${r.entity_id}|${r.dia}`)));
 
   return selected.map((r) => ({
     entity_id: r.entity_id,
