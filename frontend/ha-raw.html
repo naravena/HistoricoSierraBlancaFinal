@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prueba Home Assistant — Sierra Blanca</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+.raw-wrap{max-width:1100px;margin:40px auto;padding:24px}
+.raw-form{display:flex;gap:16px;align-items:end;flex-wrap:wrap;background:#1b2632;padding:20px;border-radius:12px}
+.raw-form .field{display:flex;flex-direction:column;gap:8px}
+.raw-form input{padding:10px;border-radius:6px;border:1px solid #45515d;background:#101820;color:#fff}
+.raw-result{margin-top:20px}
+.raw-result pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:65vh;overflow:auto;background:#101820;color:#d7e2ea;padding:18px;border-radius:10px;font-size:12px;line-height:1.5}
+.raw-meta{color:#aab6c2;margin:14px 0}
+.raw-error{color:#ffb4a9}
+</style>
+</head>
+<body>
+<main class="raw-wrap">
+  <div class="header">
+    <div><h1>Prueba de Home Assistant</h1><p>Consulta de estados originales, sin cálculos ni agregaciones</p></div>
+    <a href="/">Volver al portal</a>
+  </div>
+  <form id="raw-form" class="raw-form">
+    <div class="field"><label for="desde">Desde</label><input id="desde" name="desde" type="date" required></div>
+    <div class="field"><label for="hasta">Hasta</label><input id="hasta" name="hasta" type="date" required></div>
+    <button id="consultar" class="btn" type="submit">Consultar Home Assistant</button>
+  </form>
+  <section class="raw-result">
+    <p id="estado" class="raw-meta">Selecciona un intervalo de fechas.</p>
+    <pre id="resultado">Aquí aparecerá la respuesta JSON de Home Assistant.</pre>
+  </section>
+</main>
+<script src="ha-raw.js"></script>
+</body>
+</html>
