@@ -51,7 +51,7 @@ app.get("/api/ha/raw", auth.middleware, async (req, res, next) => {
   try {
     const { desde, hasta } = req.query;
     const validDate = (value) => typeof value === "string" &&
-      /^\\d{4}-\\d{2}-\\d{2}$/.test(value) &&
+      /^\d{4}-\d{2}-\d{2}$/.test(value) &&
       Number.isFinite(Date.parse(value + "T00:00:00Z")) &&
       new Date(value + "T00:00:00Z").toISOString().slice(0, 10) === value;
     if (!validDate(desde) || !validDate(hasta)) {
@@ -90,7 +90,7 @@ app.get("/api/ha/raw", auth.middleware, async (req, res, next) => {
       "sensor.sierra_blanca_energia_consumida_a",
       "sensor.sierra_blanca_energia_consumida_b",
     ];
-    const url = new URL(base.replace(/\\/+$/, "") + "/api/history/period/" + encodeURIComponent(start.toISOString()));
+    const url = new URL((base.endsWith("/") ? base.slice(0, -1) : base) + "/api/history/period/" + encodeURIComponent(start.toISOString()));
     url.searchParams.set("end_time", end.toISOString());
     url.searchParams.set("filter_entity_id", entities.join(","));
     url.searchParams.set("minimal_response", "0");
