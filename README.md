@@ -2,6 +2,26 @@
 
 Portal de consulta del historial de consumo de Planta Baja y Planta Alta. El backend consulta **Turso (libSQL/SQLite)**.
 
+## Prueba de lectura cruda de Home Assistant
+
+En esta rama se añade una pantalla experimental en `/ha-raw.html`. El filtro acepta fechas inclusivas (máximo 31 días) y consulta, en modo solo lectura, la API REST de historial de Home Assistant para:
+
+- `sensor.sierra_blanca_energia_consumida_a`
+- `sensor.sierra_blanca_energia_consumida_b`
+
+La respuesta muestra el JSON original recibido, sin calcular kWh diarios ni transformar los estados. La ruta está protegida por la sesión del portal.
+
+Añade al entorno del **servidor**:
+
+~~~env
+HA_BASE_URL=https://tu-home-assistant-o-direccion-tailnet
+HA_TOKEN=tu_long_lived_access_token
+~~~
+
+Para probarlo localmente, el equipo donde se ejecuta `pnpm dev` debe poder alcanzar esa dirección de Home Assistant (por ejemplo, conectado a Tailscale). No pongas `HA_TOKEN` en el frontend ni en variables públicas.
+
+**Limitación de despliegue:** esta prueba no hace que Vercel se conecte automáticamente a tu Tailnet. En Vercel, la petición solo funcionará si `HA_BASE_URL` es alcanzable desde sus funciones mediante una arquitectura de acceso remoto segura. No expongas el puerto 8123 de Home Assistant directamente a Internet para resolverlo.
+
 ## Tabla histórica unificada
 
 El portal lee el histórico desde `historical_data`, que conserva en una misma tabla:
