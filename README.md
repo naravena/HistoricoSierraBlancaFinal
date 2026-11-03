@@ -11,16 +11,18 @@ En esta rama se añade una pantalla experimental en `/ha-raw.html`. El filtro ac
 
 La respuesta muestra el JSON original recibido, sin calcular kWh diarios ni transformar los estados. La ruta está protegida por la sesión del portal.
 
-Añade al entorno del **servidor**:
+### Puente para el Preview de Vercel
 
-~~~env
-HA_BASE_URL=https://tu-home-assistant-o-direccion-tailnet
-HA_TOKEN=tu_long_lived_access_token
-~~~
+El navegador abre el portal en Vercel. Vercel consulta un puente HTTPS que lee el historial de Home Assistant desde un equipo con acceso a Tailscale. El filtro usa Home Assistant como fuente y funciona aunque el navegador esté fuera de la Tailnet.
 
-Para probarlo localmente, el equipo donde se ejecuta `pnpm dev` debe poder alcanzar esa dirección de Home Assistant (por ejemplo, conectado a Tailscale). No pongas `HA_TOKEN` en el frontend ni en variables públicas.
+1. En un equipo siempre encendido con acceso a Home Assistant, descarga esta rama e instala las dependencias con `pnpm install`.
+2. Configura en ese equipo `HA_BASE_URL`, `HA_TOKEN` y `HA_BRIDGE_SECRET`. Genera el secreto compartido con `node -p "require('node:crypto').randomBytes(32).toString('hex')"`. Usa un token nuevo si el anterior se compartió.
+3. Arranca el puente con `node src/app.js --ha-bridge`. Escucha solo en `127.0.0.1:8787` y admite únicamente el endpoint de historial autenticado. No necesita credenciales de Turso ni del portal.
+4. Publica **solo el puente** mediante un túnel HTTPS. Si habilitas [Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel) en ese equipo, puedes usar `tailscale funnel --bg 8787`. La URL HTTPS del puente será pública y cada consulta exige el secreto compartido.
+5. En las variables **Preview** de Vercel añade `HA_BRIDGE_URL` con la URL HTTPS del puente y `HA_BRIDGE_SECRET` con el mismo secreto. Conserva la configuración de inicio de sesión y redepliega. `HA_TOKEN` se configura en el puente.
+6. Abre `/ha-raw.html` con sesión iniciada y consulta un día reciente desde un dispositivo fuera de Tailscale. Un resultado con estados confirma el recorrido completo.
 
-**Limitación de despliegue:** esta prueba no hace que Vercel se conecte automáticamente a tu Tailnet. En Vercel, la petición solo funcionará si `HA_BASE_URL` es alcanzable desde sus funciones mediante una arquitectura de acceso remoto segura. No expongas el puerto 8123 de Home Assistant directamente a Internet para resolverlo.
+Para pruebas locales, el portal admite la conexión directa mediante `HA_BASE_URL` y `HA_TOKEN` si no se configura un puente. La cantidad de días consultables depende del historial que aún conserva Recorder.
 
 ## Tabla histórica unificada
 
