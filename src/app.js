@@ -1,16 +1,32 @@
+const { createHash, timingSafeEqual } = require("node:crypto");
+require("dotenv").config();
 const express = require("express");
 const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
 const multer = require("multer");
 const pdfParse = require("pdf-parse");
 
-const pool = require("./db");
-const auth = require("./auth");
+const bridgeMode = require.main === module && process.argv.includes("--ha-bridge");
+const pool = bridgeMode ? null : require("./db");
+const auth = bridgeMode ? null : require("./auth");
 const { consumoDiarioPorPlanta, consumoTotalPorPlanta } = require("./queries");
 const { extraerDatosFactura } = require("./parseFactura");
 const { repartirFactura } = require("./repartoFactura");
 
 const app = express();
+if (bridgeMode) {
+  if (!process.env.HA_BASE_URL || !process.env.HA_TOKEN || !bridgeSecret()) {
+    throw new Error("Configura HA_BASE_URL, HA_TOKEN y HA_BRIDGE_SECRET (mínimo 32 caracteres).");
+  }
+  app.get("/api/ha/raw", requireBridgeSecret, rateLimit({
+    windowMs: 60_000,
+    limit: 20,
+    keyGenerator: () => "ha-bridge",
+    message: { error: "Demasiadas consultas. Espera un minuto." },
+  }), rawHistory);
+  app.listen(8787, "127.0.0.1", () => console.log("Puente HA en http://127.0.0.1:8787"));
+  return;
+}
 app.set("trust proxy", 1);
 app.use(express.json());
 app.use(cookieParser());
@@ -47,7 +63,34 @@ app.post("/api/auth/logout", (_req, res) => {
 app.get("/api/auth/me", auth.middleware, (_req, res) => res.json({ ok: true }));
 
 // Prueba de lectura cruda desde Home Assistant. Solo lectura; no consulta Turso.
-app.get("/api/ha/raw", auth.middleware, async (req, res) => {
+app.get("/api/ha/raw", auth.middleware, rawHistory);
+
+function bridgeSecret() {
+  const secret = process.env.HA_BRIDGE_SECRET;
+  return secret && secret.length >= 32 ? secret : null;
+}
+
+function requireBridgeSecret(req, res, next) {
+  res.set("Cache-Control", "private, no-store");
+  const hash = (value) => createHash("sha256").update(value).digest();
+  if (!timingSafeEqual(hash(req.get("Authorization") || ""), hash("Bearer " + bridgeSecret()))) {
+    return res.status(401).json({ error: "No autorizado." });
+  }
+  next();
+}
+
+async function readLimited(response, limit) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of response.body) {
+    size += chunk.byteLength;
+    if (size > limit) return null;
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function rawHistory(req, res) {
   res.set("Cache-Control", "private, no-store");
   try {
     const { desde, hasta } = req.query;
@@ -61,6 +104,40 @@ app.get("/api/ha/raw", auth.middleware, async (req, res) => {
     if (hasta < desde) return res.status(400).json({ error: "'hasta' no puede ser anterior a 'desde'." });
     const days = (Date.parse(hasta + "T00:00:00Z") - Date.parse(desde + "T00:00:00Z")) / 86400000 + 1;
     if (days > 31) return res.status(400).json({ error: "La prueba permite consultar un máximo de 31 días." });
+
+    if (!bridgeMode && (process.env.HA_BRIDGE_URL || process.env.VERCEL)) {
+      const secret = bridgeSecret();
+      if (!process.env.HA_BRIDGE_URL || !secret) {
+        return res.status(503).json({ error: "Configura HA_BRIDGE_URL y HA_BRIDGE_SECRET en el servidor." });
+      }
+      const bridge = new URL(process.env.HA_BRIDGE_URL);
+      if (bridge.protocol !== "https:" || bridge.username || bridge.password) {
+        return res.status(503).json({ error: "HA_BRIDGE_URL debe ser una URL HTTPS sin credenciales." });
+      }
+      bridge.pathname = "/api/ha/raw";
+      bridge.search = new URLSearchParams({ desde, hasta }).toString();
+      const reply = await fetch(bridge, {
+        headers: { Authorization: "Bearer " + secret, Accept: "application/json" },
+        redirect: "error",
+        signal: AbortSignal.timeout(25_000),
+      });
+      if (!reply.ok) {
+        await reply.body?.cancel();
+        const errors = {
+          413: "El historial supera 4 MB. Selecciona menos días.",
+          429: "Demasiadas consultas. Espera un minuto.",
+          504: "Home Assistant tardó demasiado en responder.",
+        };
+        return res.status(errors[reply.status] ? reply.status : 502).json({
+          error: errors[reply.status] || "El puente no pudo consultar Home Assistant.",
+        });
+      }
+      const body = await readLimited(reply, 4_010_000);
+      if (!body || !Array.isArray(JSON.parse(body).raw)) {
+        return res.status(502).json({ error: "El puente devolvió un historial inválido." });
+      }
+      return res.type("application/json").send(body);
+    }
 
     const base = process.env.HA_BASE_URL;
     const token = process.env.HA_TOKEN;
@@ -103,22 +180,16 @@ app.get("/api/ha/raw", auth.middleware, async (req, res) => {
     const response = await fetch(url, {
       redirect: "error",
       headers: { Authorization: "Bearer " + token, Accept: "application/json" },
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(15_000),
     });
     if (!response.ok) {
       await response.body?.cancel();
       return res.status(502).json({ error: "Home Assistant respondió HTTP " + response.status });
     }
-    const chunks = [];
-    let size = 0;
-    for await (const chunk of response.body) {
-      size += chunk.byteLength;
-      if (size > 4_000_000) {
-        return res.status(413).json({ error: "El historial supera 4 MB. Selecciona menos días." });
-      }
-      chunks.push(chunk);
+    const text = await readLimited(response, 4_000_000);
+    if (text === null) {
+      return res.status(413).json({ error: "El historial supera 4 MB. Selecciona menos días." });
     }
-    const text = Buffer.concat(chunks).toString("utf8");
     const raw = JSON.parse(text);
     if (!Array.isArray(raw) || !raw.every(Array.isArray)) {
       return res.status(502).json({ error: "Formato inesperado en el historial de Home Assistant." });
@@ -139,7 +210,7 @@ app.get("/api/ha/raw", auth.middleware, async (req, res) => {
     }
     res.status(502).json({ error: "No se pudo obtener un historial válido de Home Assistant." });
   }
-});
+}
 
 app.get("/api/consumo", auth.middleware, async (req, res, next) => {
   try {
