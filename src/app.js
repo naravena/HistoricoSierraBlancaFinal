@@ -47,11 +47,12 @@ app.post("/api/auth/logout", (_req, res) => {
 app.get("/api/auth/me", auth.middleware, (_req, res) => res.json({ ok: true }));
 
 // Prueba de lectura cruda desde Home Assistant. Solo lectura; no consulta Turso.
-app.get("/api/ha/raw", auth.middleware, async (req, res, next) => {
+app.get("/api/ha/raw", auth.middleware, async (req, res) => {
+  res.set("Cache-Control", "private, no-store");
   try {
     const { desde, hasta } = req.query;
     const validDate = (value) => typeof value === "string" &&
-      /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+      /^\d{4}-\d{2}-\d{2}$/.test(value) && value >= "0100-01-01" && value < "9999-12-31" &&
       Number.isFinite(Date.parse(value + "T00:00:00Z")) &&
       new Date(value + "T00:00:00Z").toISOString().slice(0, 10) === value;
     if (!validDate(desde) || !validDate(hasta)) {
@@ -93,35 +94,50 @@ app.get("/api/ha/raw", auth.middleware, async (req, res, next) => {
     const url = new URL((base.endsWith("/") ? base.slice(0, -1) : base) + "/api/history/period/" + encodeURIComponent(start.toISOString()));
     url.searchParams.set("end_time", end.toISOString());
     url.searchParams.set("filter_entity_id", entities.join(","));
-    url.searchParams.set("minimal_response", "0");
+    url.searchParams.set("skip_initial_state", "1");
     url.searchParams.set("significant_changes_only", "0");
 
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
+      return res.status(503).json({ error: "HA_BASE_URL debe ser una URL HTTP(S) sin credenciales." });
+    }
     const response = await fetch(url, {
+      redirect: "error",
       headers: { Authorization: "Bearer " + token, Accept: "application/json" },
       signal: AbortSignal.timeout(30000),
     });
-    const text = await response.text();
     if (!response.ok) {
-      return res.status(response.status).json({
-        error: "Home Assistant respondió HTTP " + response.status,
-        detail: text.slice(0, 1000),
-      });
+      await response.body?.cancel();
+      return res.status(502).json({ error: "Home Assistant respondió HTTP " + response.status });
     }
-    let raw;
-    try { raw = JSON.parse(text); } catch { throw new Error("Home Assistant devolvió una respuesta que no es JSON."); }
-    if (!Array.isArray(raw)) throw new Error("Formato inesperado en la respuesta de historial de Home Assistant.");
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of response.body) {
+      size += chunk.byteLength;
+      if (size > 4_000_000) {
+        return res.status(413).json({ error: "El historial supera 4 MB. Selecciona menos días." });
+      }
+      chunks.push(chunk);
+    }
+    const text = Buffer.concat(chunks).toString("utf8");
+    const raw = JSON.parse(text);
+    if (!Array.isArray(raw) || !raw.every(Array.isArray)) {
+      return res.status(502).json({ error: "Formato inesperado en el historial de Home Assistant." });
+    }
 
-    res.json({
+    const metadata = JSON.stringify({
       source: "Home Assistant REST API /api/history/period",
       timezone: "Europe/Madrid",
       desde,
       hasta,
       entities,
-      count: raw.reduce((sum, group) => sum + (Array.isArray(group) ? group.length : 0), 0),
-      raw,
+      count: raw.reduce((sum, group) => sum + group.length, 0),
     });
+    res.type("application/json").send(metadata.slice(0, -1) + ',"raw":' + text + "}");
   } catch (err) {
-    next(err);
+    if (err.name === "TimeoutError" || err.name === "AbortError") {
+      return res.status(504).json({ error: "Home Assistant tardó demasiado en responder." });
+    }
+    res.status(502).json({ error: "No se pudo obtener un historial válido de Home Assistant." });
   }
 });
 
