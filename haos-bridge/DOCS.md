@@ -1,6 +1,6 @@
 # Puente Sierra Blanca
 
-Copia esta carpeta completa a `/addons/haos-bridge` en Home Assistant OS. En la tienda de complementos, recarga la lista e instala **Puente Sierra Blanca** desde los complementos locales.
+Copia esta carpeta completa a `/local_apps/haos-bridge` desde Terminal & SSH 10.5.0 en Home Assistant OS. Versiones antiguas del complemento SSH pueden montar la carpeta local en `/addons`. En la tienda de complementos, recarga la lista e instala **Puente Sierra Blanca** desde los complementos locales.
 
 En Configuración, introduce un token nuevo de Home Assistant en `ha_token` y el secreto compartido con Vercel en `ha_bridge_secret`. El origen por defecto es `http://127.0.0.1:8123`. Inicia el complemento y activa **Iniciar al arrancar**.
 

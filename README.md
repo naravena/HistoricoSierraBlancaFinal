@@ -2,14 +2,18 @@
 
 Portal de consulta del historial de consumo de Planta Baja y Planta Alta. El backend consulta **Turso (libSQL/SQLite)**.
 
-## Prueba de lectura cruda de Home Assistant
+## Panel de energía de Home Assistant
 
-En esta rama se añade una pantalla experimental en `/ha-raw.html`. El filtro acepta fechas inclusivas (máximo 31 días) y consulta, en modo solo lectura, la API REST de historial de Home Assistant para:
+En esta rama, `/ha-raw.html` muestra consumo observado, distribución diaria y horaria, cobertura y lecturas filtrables. El filtro acepta fechas inclusivas (máximo 31 días) y consulta, en modo solo lectura, la API REST de historial de Home Assistant para:
 
 - `sensor.sierra_blanca_energia_consumida_a`
 - `sensor.sierra_blanca_energia_consumida_b`
 
-La respuesta muestra el JSON original recibido, sin calcular kWh diarios ni transformar los estados. La ruta está protegida por la sesión del portal.
+El panel empieza por hoy en Europe/Madrid y realiza una llamada al historial por intervalo. Los filtros de planta, agrupación, búsqueda y estado se resuelven en el navegador. Mantiene como máximo tres consultas durante 60 segundos en memoria, ofrece actualización manual y descarga CSV agregado y el texto JSON original. La ruta está protegida por la sesión del portal.
+
+El consumo observado suma diferencias de contadores consecutivos válidos, atribuidas al instante de origen del par. Los descensos se excluyen y los estados inválidos cortan la serie. Un intervalo sin pares válidos se muestra con un guion. La lectura previa al comienzo y la posterior al cierre no se solicitan, por lo que el panel informa de cobertura y evita certificar cierres diarios completos. Las horas repetidas por cambio de horario tienen su offset en el detalle.
+
+En Home Assistant OS se puede ejecutar el puente como [complemento local](haos-bridge/DOCS.md). Los cambios del panel se despliegan en Vercel y reutilizan el puente existente.
 
 ### Puente para el Preview de Vercel
 
