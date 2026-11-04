@@ -191,6 +191,14 @@ h2 {
   margin-bottom:22px
 }
 
+.detail-loader {
+  margin-top: 22px;
+}
+
+.detail-loader .date-fields {
+  margin-top: 18px;
+}
+
 .filters {
   padding:20px 24px
 }

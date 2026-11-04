@@ -1,4 +1,5 @@
 const { bridgeSecret, requireBridgeSecret, rawHistory } = require("../haos-bridge/history");
+const { summary } = require("../haos-bridge/summary");
 require("dotenv").config();
 const express = require("express");
 const cookieParser = require("cookie-parser");
@@ -24,6 +25,9 @@ if (bridgeMode) {
     keyGenerator: () => "ha-bridge",
     message: { error: "Demasiadas consultas. Espera un minuto." },
   }), (req, res) => rawHistory(req, res, true));
+  app.get("/api/ha/summary", requireBridgeSecret, rateLimit({
+    windowMs: 60_000, limit: 20, keyGenerator: () => "ha-summary",
+  }), (req, res) => summary(req, res, true));
   app.listen(8787, "127.0.0.1", () => console.log("Puente HA en http://127.0.0.1:8787"));
   return;
 }
@@ -64,6 +68,7 @@ app.get("/api/auth/me", auth.middleware, (_req, res) => res.json({ ok: true }));
 
 // Prueba de lectura cruda desde Home Assistant. Solo lectura; no consulta Turso.
 app.get("/api/ha/raw", auth.middleware, (req, res) => rawHistory(req, res));
+app.get("/api/ha/summary", auth.middleware, (req, res) => summary(req, res));
 
 app.get("/api/consumo", auth.middleware, async (req, res, next) => {
   try {

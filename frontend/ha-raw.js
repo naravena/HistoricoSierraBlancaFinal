@@ -11,6 +11,8 @@ const escapeHTML = text => String(text).replace(/[&<>"']/g, char => ({
 })[char]);
 const cache = new Map();
 let model = null;
+let periodTotals = null;
+const totalsCache = new Map();
 let loaded = null;
 let controller = null;
 let requestId = 0;
@@ -141,30 +143,92 @@ function renderSamples() {
 function render() {
   if (!model) return;
   bins = energy.buckets(model, $("group").value, $("entity").value);
-  const totals = selectedKeys().map(key => model.series[key].total);
-  const total = totals.every(n => n === null) ? null : totals.reduce((sum, n) => sum + (n ?? 0), 0);
-  metric("total", total);
-  const available = selectedKeys().filter(key => model.series[key].total !== null).length;
-  $("total-note").textContent = available + " de " + selectedKeys().length + " plantas con pares válidos";
-  for (const key of ["a", "b"]) {
-    metric("total-" + key, model.series[key].total);
-    const last = model.series[key].last;
-    $("last-" + key).textContent = last ? "Último contador " + value(last.value) + " kWh" : "Sin muestras válidas";
-  }
-  const peak = bins.filter(bin => bin.total !== null).reduce((best, bin) =>
-    !best || bin.total > best.total ? bin : best, null);
-  metric("peak", peak ? peak.total : null);
-  $("peak-note").textContent = peak ? peak.label : "Sin pares válidos";
-  $("period").textContent = model.desde + " — " + model.hasta + " · " +
-    (model.hasta === energy.dayOf(Date.now()) ? "Incluye hoy, día en curso" : "Intervalo observado");
   $("chart-note").textContent = ($("group").value === "hour" ? "Horas repetidas por cambio horario se distinguen por su offset en el detalle. " : "") +
-    "— indica ausencia de pares válidos. El total puede ser parcial si falta una planta.";
+    "Detalle del " + model.desde + ". Consumo entre estados observados. Puede diferir del sumatorio de estadísticas. — indica ausencia de pares válidos.";
   summaryPage = 0;
   renderChart();
   renderCoverage();
   renderSummary();
   filterSamples();
+  $("detail").hidden = false;
+}
+
+function renderTotals() {
+  if (!periodTotals) return;
+  const available = selectedKeys().filter(key => periodTotals.totals[key] !== null);
+  const total = available.length ? available.reduce((sum, key) => sum + periodTotals.totals[key], 0) : null;
+  metric("total", total);
+  $("total-note").textContent = available.length + " de " + selectedKeys().length + " plantas con estadísticas";
+  for (const key of ["a", "b"]) {
+    metric("total-" + key, periodTotals.totals[key]);
+    $("last-" + key).textContent = periodTotals.totals[key] === null ?
+      "Sin estadísticas disponibles para estas fechas" : "Sumatorio de Home Assistant";
+  }
+  const days = (Date.parse(periodTotals.hasta) - Date.parse(periodTotals.desde)) / 86400000 + 1;
+  metric("peak", total === null ? null : total / days);
+  $("peak-note").textContent = "Dividido entre " + days + (days === 1 ? " día seleccionado" : " días seleccionados");
+  $("period").textContent = periodTotals.desde + " — " + periodTotals.hasta + " · Europe/Madrid";
+  $("statistics-note").textContent = periodTotals.note;
   $("dashboard").hidden = false;
+}
+
+function applyTotals(data, cached) {
+  periodTotals = data;
+  model = loaded = null;
+  $("detail").hidden = true;
+  $("detail-status").textContent = "";
+  $("detail-day").min = data.desde;
+  $("detail-day").max = data.hasta;
+  $("detail-day").value = data.hasta;
+  renderTotals();
+  message((cached ? "Sumatorio reutilizado de memoria" : "Sumatorio recibido de Home Assistant") +
+    " · Las lecturas se cargarán cuando abras el detalle.");
+}
+
+async function load(force = false) {
+  const desde = $("desde").value;
+  const hasta = $("hasta").value;
+  if (!energy.validRange(desde, hasta, 366) || hasta > energy.dayOf(Date.now())) {
+    message("Elige fechas válidas, sin días futuros, y un máximo de 366 días inclusivos.", true);
+    return;
+  }
+  const id = ++requestId;
+  controller?.abort();
+  const key = desde + "/" + hasta;
+  const cached = totalsCache.get(key);
+  if (!force && cached && Date.now() - cached.time < 60000) {
+    $("consultar").disabled = $("refresh").disabled = $("load-detail").disabled = false;
+    $("dashboard").removeAttribute("aria-busy");
+    applyTotals(cached.data, true);
+    return;
+  }
+  controller = new AbortController();
+  $("consultar").disabled = $("refresh").disabled = $("load-detail").disabled = true;
+  message("Calculando solo el sumatorio del " + desde + " al " + hasta + "…");
+  try {
+    const response = await fetch("/api/ha/summary?" + new URLSearchParams({ desde, hasta }), {
+      credentials: "include", cache: "no-store",
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]),
+    });
+    if (response.status === 401) { window.location.href = "/login.html"; return; }
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "No se pudo consultar el sumatorio.");
+    if (data.desde !== desde || data.hasta !== hasta || !data.totals ||
+        !["a", "b"].every(key => data.totals[key] === null || Number.isFinite(data.totals[key]))) {
+      throw new Error("El sumatorio recibido tiene un formato inesperado.");
+    }
+    if (id !== requestId) return;
+    totalsCache.delete(key);
+    totalsCache.set(key, { data, time: Date.now() });
+    while (totalsCache.size > 3) totalsCache.delete(totalsCache.keys().next().value);
+    applyTotals(data, false);
+  } catch (error) {
+    if (id !== requestId) return;
+    message((error.name === "TimeoutError" ? "Home Assistant tardó demasiado en responder." : error.message) +
+      (periodTotals ? " Se mantiene el sumatorio del " + periodTotals.desde + " al " + periodTotals.hasta + "." : ""), true);
+  } finally {
+    if (id === requestId) $("consultar").disabled = $("refresh").disabled = $("load-detail").disabled = false;
+  }
 }
 
 function showEntry(entry, fromCache) {
@@ -175,32 +239,32 @@ function showEntry(entry, fromCache) {
   const time = new Intl.DateTimeFormat("es-ES", {
     timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit", second: "2-digit",
   }).format(entry.time);
-  message(count + " lecturas en el intervalo · Consultado a las " + time + " · " +
+  $("detail-status").textContent = count + " lecturas del " + model.desde + " · Consultado a las " + time + " · " +
     (fromCache ? "Reutilizado de memoria" : "Recibido de Home Assistant") +
-    (count ? "" : " · Recorder no devolvió muestras para estas fechas."));
+    (count ? "" : " · Recorder no devolvió estados. Las estadísticas del periodo pueden seguir disponibles.");
 }
 
-async function load(force = false) {
-  const desde = $("desde").value;
-  const hasta = $("hasta").value;
-  if (!energy.validRange(desde, hasta) || hasta > energy.dayOf(Date.now())) {
-    message("Elige fechas válidas, sin días futuros, y un máximo de 31 días inclusivos.", true);
+async function loadDetail() {
+  const desde = $("detail-day").value;
+  const hasta = desde;
+  if (!periodTotals || !energy.validRange(desde, hasta) || desde < periodTotals.desde || hasta > periodTotals.hasta) {
+    $("detail-status").textContent = "Elige un día dentro del periodo del sumatorio.";
     return;
   }
   const id = ++requestId;
   controller?.abort();
   const key = desde + "/" + hasta;
   const cached = cache.get(key);
-  if (!force && cached && Date.now() - cached.time < 60000) {
-    $("consultar").disabled = $("refresh").disabled = false;
+  if (cached && Date.now() - cached.time < 60000) {
+    $("consultar").disabled = $("refresh").disabled = $("load-detail").disabled = false;
     $("dashboard").removeAttribute("aria-busy");
     showEntry(cached, true);
     return;
   }
   controller = new AbortController();
-  $("consultar").disabled = $("refresh").disabled = true;
+  $("consultar").disabled = $("refresh").disabled = $("load-detail").disabled = true;
   $("dashboard").setAttribute("aria-busy", "true");
-  message("Consultando " + desde + " — " + hasta + " en Home Assistant…");
+  $("detail-status").textContent = "Cargando las lecturas del " + desde + "…";
   try {
     const response = await fetch("/api/ha/raw?" + new URLSearchParams({ desde, hasta }), {
       credentials: "include", cache: "no-store",
@@ -226,10 +290,10 @@ async function load(force = false) {
     if (id !== requestId) return;
     const detail = error.name === "TimeoutError" ? "La consulta tardó demasiado. Prueba un intervalo más corto." :
       error.name === "TypeError" ? "No se pudo conectar. Revisa la conexión y vuelve a intentarlo." : error.message;
-    message(detail + (model ? " Se mantienen los datos del intervalo " + model.desde + " — " + model.hasta + "." : ""), true);
+    $("detail-status").textContent = detail + (model ? " Se mantienen las lecturas del " + model.desde + "." : "");
   } finally {
     if (id === requestId) {
-      $("consultar").disabled = $("refresh").disabled = false;
+      $("consultar").disabled = $("refresh").disabled = $("load-detail").disabled = false;
       $("dashboard").removeAttribute("aria-busy");
     }
   }
@@ -267,7 +331,8 @@ for (const id of ["desde", "hasta"]) $(id).addEventListener("change", () => {
     button.setAttribute("aria-pressed", "false");
   });
 });
-$("entity").addEventListener("change", render);
+$("load-detail").addEventListener("click", loadDetail);
+$("entity").addEventListener("change", () => { renderTotals(); render(); });
 $("group").addEventListener("change", render);
 $("quality").addEventListener("change", filterSamples);
 let searchTimer;
@@ -295,6 +360,7 @@ $("logout").addEventListener("click", async () => {
     if (!response.ok) throw new Error("No se pudo cerrar la sesión.");
     controller?.abort();
     cache.clear();
+    totalsCache.clear();
     window.location.href = "/login.html";
   } catch { message("No se pudo cerrar la sesión. Vuelve a intentarlo.", true); }
 });

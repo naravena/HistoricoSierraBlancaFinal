@@ -19,17 +19,24 @@
   <form id="raw-form" class="panel filters">
     <div class="presets" aria-label="Intervalos rápidos"><button type="button" data-days="0" class="active">Hoy</button><button type="button" data-days="1">Ayer</button><button type="button" data-days="7">7 días</button><button type="button" data-days="30">30 días</button></div>
     <div class="date-fields"><label>Desde<input id="desde" type="date" required></label><label>Hasta<input id="hasta" type="date" required></label><button id="consultar" type="submit" class="primary">Consultar</button><button id="refresh" type="button" title="Volver a consultar Home Assistant">Actualizar</button></div>
-    <p class="hint">Hasta 31 días por consulta. Cambiar planta o agrupación usa los datos ya cargados.</p>
+    <p class="hint">Hasta 366 días. Primero se carga solo el sumatorio de estadísticas. Las lecturas se consultan al abrir un día.</p>
   </form>
   <p id="estado" class="status" role="status" aria-live="polite">Preparando la consulta de hoy…</p>
   <section id="dashboard" hidden>
-    <div class="section-heading"><div><h2>Consumo observado</h2><p id="period" class="muted"></p></div><label class="inline-label">Ver<select id="entity"><option value="all">Ambas plantas</option><option value="a">Planta Baja · A</option><option value="b">Planta Alta · B</option></select></label></div>
+    <div class="section-heading"><div><h2>Sumatorio del periodo</h2><p id="period" class="muted"></p></div><label class="inline-label">Ver<select id="entity"><option value="all">Ambas plantas</option><option value="a">Planta Baja · A</option><option value="b">Planta Alta · B</option></select></label></div>
     <div class="cards">
       <article class="card total"><p>Total seleccionado</p><div id="total" class="metric">—</div><small id="total-note"></small></article>
       <article class="card"><p><span class="dot a"></span>Planta Baja</p><div id="total-a" class="metric">—</div><small id="last-a"></small></article>
       <article class="card"><p><span class="dot b"></span>Planta Alta</p><div id="total-b" class="metric">—</div><small id="last-b"></small></article>
-      <article class="card"><p>Mayor intervalo observado</p><div id="peak" class="metric">—</div><small id="peak-note"></small></article>
+      <article class="card"><p>Media por día seleccionado</p><div id="peak" class="metric">—</div><small id="peak-note"></small></article>
     </div>
+    <p id="statistics-note" class="hint"></p>
+    <section class="panel detail-loader">
+      <div><h2>¿Quieres explorar las lecturas?</h2><p class="muted">Consulta un día cuando lo necesites. Los estados antiguos dependen de la retención de Recorder, aunque el sumatorio siga disponible.</p></div>
+      <div class="date-fields"><label>Día del detalle<input id="detail-day" type="date" required></label><button id="load-detail" class="primary" type="button">Cargar detalle del día</button></div>
+      <p id="detail-status" class="status" role="status" aria-live="polite"></p>
+    </section>
+    <div id="detail" hidden>
     <section class="panel chart-panel">
       <div class="section-heading"><div><h2>Distribución del consumo</h2><p class="muted">Incrementos registrados · kWh</p></div><label class="inline-label">Agrupar<select id="group"><option value="day">Por día</option><option value="hour">Por hora</option></select></label></div>
       <div class="legend"><span><i class="dot a"></i>Planta Baja</span><span><i class="dot b"></i>Planta Alta</span><span class="muted">Enfoca una barra o pasa el cursor para ver el detalle</span></div>
@@ -52,6 +59,7 @@
       <div class="table-scroll"><table><thead><tr><th>Fecha · Madrid</th><th>Planta</th><th>Contador · kWh</th><th>Incremento · kWh</th><th>Estado</th></tr></thead><tbody id="samples"></tbody></table></div>
       <div class="pager"><button id="prev" type="button">Anterior</button><span id="sample-page"></span><button id="next" type="button">Siguiente</button></div>
     </section>
+    </div>
   </section>
   <footer>SIERRA BLANCA <span>Lectura directa de Home Assistant · Fechas en Europe/Madrid</span></footer>
 </main>

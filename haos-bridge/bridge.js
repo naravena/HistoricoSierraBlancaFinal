@@ -2,6 +2,7 @@ const { readFileSync } = require("node:fs");
 const express = require("express");
 const rateLimit = require("express-rate-limit");
 const { bridgeSecret, requireBridgeSecret, rawHistory } = require("./history");
+const { summary } = require("./summary");
 
 const options = JSON.parse(readFileSync("/data/options.json", "utf8"));
 process.env.HA_BASE_URL = options.ha_base_url || "";
@@ -13,10 +14,12 @@ if (!process.env.HA_BASE_URL || !process.env.HA_TOKEN || !bridgeSecret()) {
 
 const app = express();
 app.disable("x-powered-by");
-app.get("/api/ha/raw", requireBridgeSecret, rateLimit({
+const limiter = rateLimit({
   windowMs: 60_000,
   limit: 20,
   keyGenerator: () => "ha-bridge",
   message: { error: "Demasiadas consultas. Espera un minuto." },
-}), (req, res) => rawHistory(req, res, true));
+});
+app.get("/api/ha/raw", requireBridgeSecret, limiter, (req, res) => rawHistory(req, res, true));
+app.get("/api/ha/summary", requireBridgeSecret, limiter, (req, res) => summary(req, res, true));
 app.listen(8787, "127.0.0.1", () => console.log("Puente HA en http://127.0.0.1:8787"));
