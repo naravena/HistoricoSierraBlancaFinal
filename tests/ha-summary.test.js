@@ -44,8 +44,11 @@ test("summary obtains two scalar changes through one connection, without raw his
     assert.equal(command.type, "recorder/statistic_during_period");
     assert.deepEqual(command.types, ["change"]);
     assert.deepEqual(command.units, { energy: "kWh" });
-    assert.equal(command.start_time, "2026-08-08T22:00:00.000Z");
-    assert.equal(command.end_time, "2026-09-07T22:00:00.000Z");
+    assert.deepEqual(command.fixed_period, {
+      start_time: "2026-08-08T22:00:00.000Z", end_time: "2026-09-07T22:00:00.000Z",
+    });
+    assert.equal(Object.hasOwn(command, "start_time"), false);
+    assert.equal(Object.hasOwn(command, "end_time"), false);
   }
   assert.equal(instance.closed, true);
 });

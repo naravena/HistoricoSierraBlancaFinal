@@ -71,7 +71,8 @@ function totalsFromHA(base, token, dates, Socket = WebSocket) {
           authenticated = true;
           entities.forEach((statistic_id, index) => socket.send(JSON.stringify({
             id: index + 1, type: "recorder/statistic_during_period", statistic_id,
-            start_time: dates.start, end_time: dates.end, types: ["change"], units: { energy: "kWh" },
+            fixed_period: { start_time: dates.start, end_time: dates.end },
+            types: ["change"], units: { energy: "kWh" },
           })));
         } else if (message.type === "result" && [1, 2].includes(message.id)) {
           if (!authenticated || !message.success || !message.result || typeof message.result !== "object") {
