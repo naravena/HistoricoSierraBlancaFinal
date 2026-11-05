@@ -2,6 +2,32 @@
 
 Portal de consulta del historial de consumo de Planta Baja y Planta Alta. El backend consulta **Turso (libSQL/SQLite)**.
 
+## Panel de energía de Home Assistant
+
+En esta rama, `/ha-raw.html` muestra sumatorios del periodo y permite abrir después el consumo observado, la distribución diaria y horaria, la cobertura y las lecturas de un día. El sumatorio acepta hasta 366 días inclusivos y consulta las estadísticas de Home Assistant para:
+
+- `sensor.sierra_blanca_energia_consumida_a`
+- `sensor.sierra_blanca_energia_consumida_b`
+
+El panel empieza por hoy en Europe/Madrid y consulta solo el sumatorio de estadísticas por planta, con un máximo de 366 días. El puente 1.1.0 pide el cambio de energía a Home Assistant y devuelve dos valores. Al abrir un día se consultan sus estados para el gráfico, la cobertura y las descargas CSV y JSON. Los filtros de planta, agrupación, búsqueda y estado se resuelven en el navegador. Mantiene como máximo tres consultas de cada tipo durante 60 segundos en memoria y ofrece actualización manual. Las rutas están protegidas por la sesión del portal.
+
+El consumo observado suma diferencias de contadores consecutivos válidos, atribuidas al instante de origen del par. Los descensos se excluyen y los estados inválidos cortan la serie. Un intervalo sin pares válidos se muestra con un guion. La lectura previa al comienzo y la posterior al cierre no se solicitan, por lo que el panel informa de cobertura y evita certificar cierres diarios completos. Las horas repetidas por cambio de horario tienen su offset en el detalle.
+
+En Home Assistant OS se puede ejecutar el puente como [complemento local](haos-bridge/DOCS.md). Los cambios del panel se despliegan en Vercel y reutilizan el puente existente.
+
+### Puente para el Preview de Vercel
+
+El navegador abre el portal en Vercel. Vercel consulta un puente HTTPS que lee el historial de Home Assistant desde un equipo con acceso a Tailscale. El filtro usa Home Assistant como fuente y funciona aunque el navegador esté fuera de la Tailnet.
+
+1. En un equipo siempre encendido con acceso a Home Assistant, descarga esta rama e instala las dependencias con `pnpm install`.
+2. Configura en ese equipo `HA_BASE_URL`, `HA_TOKEN` y `HA_BRIDGE_SECRET`. Genera el secreto compartido con `node -p "require('node:crypto').randomBytes(32).toString('hex')"`. Usa un token nuevo si el anterior se compartió.
+3. Arranca el puente con `node src/app.js --ha-bridge`. Escucha solo en `127.0.0.1:8787` y admite únicamente el endpoint de historial autenticado. No necesita credenciales de Turso ni del portal.
+4. Publica **solo el puente** mediante un túnel HTTPS. Si habilitas [Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel) en ese equipo, puedes usar `tailscale funnel --bg 8787`. La URL HTTPS del puente será pública y cada consulta exige el secreto compartido.
+5. En las variables **Preview** de Vercel añade `HA_BRIDGE_URL` con la URL HTTPS del puente y `HA_BRIDGE_SECRET` con el mismo secreto. Conserva la configuración de inicio de sesión y redepliega. `HA_TOKEN` se configura en el puente.
+6. Abre `/ha-raw.html` con sesión iniciada y consulta un día reciente desde un dispositivo fuera de Tailscale. Un resultado con estados confirma el recorrido completo.
+
+Para pruebas locales, el portal admite la conexión directa mediante `HA_BASE_URL` y `HA_TOKEN` si no se configura un puente. La cantidad de días consultables depende del historial que aún conserva Recorder.
+
 ## Tabla histórica unificada
 
 El portal lee el histórico desde `historical_data`, que conserva en una misma tabla:

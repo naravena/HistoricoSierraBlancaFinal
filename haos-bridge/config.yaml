@@ -1,0 +1,19 @@
+name: Puente Sierra Blanca
+version: "1.1.1"
+slug: sierra_blanca_bridge
+description: Historial de solo lectura para dos sensores de energía
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: false
+host_network: true
+options:
+  ha_base_url: "http://127.0.0.1:8123"
+  ha_token: ""
+  ha_bridge_secret: ""
+schema:
+  ha_base_url: url
+  ha_token: password
+  ha_bridge_secret: password

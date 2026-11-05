@@ -1,16 +1,36 @@
+const { bridgeSecret, requireBridgeSecret, rawHistory } = require("../haos-bridge/history");
+const { summary } = require("../haos-bridge/summary");
+require("dotenv").config();
 const express = require("express");
 const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
 const multer = require("multer");
 const pdfParse = require("pdf-parse");
 
-const pool = require("./db");
-const auth = require("./auth");
+const bridgeMode = require.main === module && process.argv.includes("--ha-bridge");
+const pool = bridgeMode ? null : require("./db");
+const auth = bridgeMode ? null : require("./auth");
 const { consumoDiarioPorPlanta, consumoTotalPorPlanta } = require("./queries");
 const { extraerDatosFactura } = require("./parseFactura");
 const { repartirFactura } = require("./repartoFactura");
 
 const app = express();
+if (bridgeMode) {
+  if (!process.env.HA_BASE_URL || !process.env.HA_TOKEN || !bridgeSecret()) {
+    throw new Error("Configura HA_BASE_URL, HA_TOKEN y HA_BRIDGE_SECRET (mínimo 32 caracteres).");
+  }
+  app.get("/api/ha/raw", requireBridgeSecret, rateLimit({
+    windowMs: 60_000,
+    limit: 20,
+    keyGenerator: () => "ha-bridge",
+    message: { error: "Demasiadas consultas. Espera un minuto." },
+  }), (req, res) => rawHistory(req, res, true));
+  app.get("/api/ha/summary", requireBridgeSecret, rateLimit({
+    windowMs: 60_000, limit: 20, keyGenerator: () => "ha-summary",
+  }), (req, res) => summary(req, res, true));
+  app.listen(8787, "127.0.0.1", () => console.log("Puente HA en http://127.0.0.1:8787"));
+  return;
+}
 app.set("trust proxy", 1);
 app.use(express.json());
 app.use(cookieParser());
@@ -45,6 +65,10 @@ app.post("/api/auth/logout", (_req, res) => {
 });
 
 app.get("/api/auth/me", auth.middleware, (_req, res) => res.json({ ok: true }));
+
+// Prueba de lectura cruda desde Home Assistant. Solo lectura; no consulta Turso.
+app.get("/api/ha/raw", auth.middleware, (req, res) => rawHistory(req, res));
+app.get("/api/ha/summary", auth.middleware, (req, res) => summary(req, res));
 
 app.get("/api/consumo", auth.middleware, async (req, res, next) => {
   try {

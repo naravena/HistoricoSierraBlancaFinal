@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Energía · Sierra Blanca</title>
+  <link rel="stylesheet" href="ha-energy.css">
+  <script defer src="ha-energy-analysis.js"></script>
+  <script defer src="ha-raw.js"></script>
+</head>
+<body>
+<main class="page">
+  <header class="header">
+    <a class="brand" href="/">SB<span>SIERRA BLANCA</span></a>
+    <div class="header-actions"><span class="source"><i></i>Home Assistant</span><a href="/">Portal</a><button id="logout" class="text-button">Salir</button></div>
+  </header>
+  <section class="intro"><div><p class="eyebrow">ENERGÍA DE TU VIVIENDA</p><h1>Entiende tu consumo.</h1><p class="muted">Dos plantas, una visión del histórico de tus sensores.</p></div><span class="zone">Europe/Madrid</span></section>
+  <form id="raw-form" class="panel filters">
+    <div class="presets" aria-label="Intervalos rápidos"><button type="button" data-days="0" class="active">Hoy</button><button type="button" data-days="1">Ayer</button><button type="button" data-days="7">7 días</button><button type="button" data-days="30">30 días</button></div>
+    <div class="date-fields"><label>Desde<input id="desde" type="date" required></label><label>Hasta<input id="hasta" type="date" required></label><button id="consultar" type="submit" class="primary">Consultar</button><button id="refresh" type="button" title="Volver a consultar Home Assistant">Actualizar</button></div>
+    <p class="hint">Hasta 366 días. Primero se carga solo el sumatorio de estadísticas. Las lecturas se consultan al abrir un día.</p>
+  </form>
+  <p id="estado" class="status" role="status" aria-live="polite">Preparando la consulta de hoy…</p>
+  <section id="dashboard" hidden>
+    <div class="section-heading"><div><h2>Sumatorio del periodo</h2><p id="period" class="muted"></p></div><label class="inline-label">Ver<select id="entity"><option value="all">Ambas plantas</option><option value="a">Planta Baja · A</option><option value="b">Planta Alta · B</option></select></label></div>
+    <div class="cards">
+      <article class="card total"><p>Total seleccionado</p><div id="total" class="metric">—</div><small id="total-note"></small></article>
+      <article class="card"><p><span class="dot a"></span>Planta Baja</p><div id="total-a" class="metric">—</div><small id="last-a"></small></article>
+      <article class="card"><p><span class="dot b"></span>Planta Alta</p><div id="total-b" class="metric">—</div><small id="last-b"></small></article>
+      <article class="card"><p>Media por día seleccionado</p><div id="peak" class="metric">—</div><small id="peak-note"></small></article>
+    </div>
+    <p id="statistics-note" class="hint"></p>
+    <section class="panel detail-loader">
+      <div><h2>¿Quieres explorar las lecturas?</h2><p class="muted">Consulta un día cuando lo necesites. Los estados antiguos dependen de la retención de Recorder, aunque el sumatorio siga disponible.</p></div>
+      <div class="date-fields"><label>Día del detalle<input id="detail-day" type="date" required></label><button id="load-detail" class="primary" type="button">Cargar detalle del día</button></div>
+      <p id="detail-status" class="status" role="status" aria-live="polite"></p>
+    </section>
+    <div id="detail" hidden>
+    <section class="panel chart-panel">
+      <div class="section-heading"><div><h2>Distribución del consumo</h2><p class="muted">Incrementos registrados · kWh</p></div><label class="inline-label">Agrupar<select id="group"><option value="day">Por día</option><option value="hour">Por hora</option></select></label></div>
+      <div class="legend"><span><i class="dot a"></i>Planta Baja</span><span><i class="dot b"></i>Planta Alta</span><span class="muted">Enfoca una barra o pasa el cursor para ver el detalle</span></div>
+      <div id="chart" class="chart" tabindex="0" aria-label="Gráfico de consumo, desplazable horizontalmente"></div>
+      <p id="chart-note" class="hint"></p>
+    </section>
+    <section class="panel">
+      <div class="section-heading"><div><h2>Cobertura de los sensores</h2><p class="muted">Qué datos sostienen los cálculos</p></div></div>
+      <div id="coverage" class="coverage"></div>
+      <div class="method"><strong>Cómo leer estas cifras</strong><p>Sumamos los incrementos entre contadores consecutivos. Atribuimos cada incremento al día y a la hora de la lectura inicial del par, igual que el criterio del portal. No repartimos el consumo entre horas sin lecturas. Los descensos del contador y los estados inválidos interrumpen el cálculo.</p><p>El primer contador es una referencia. Falta la lectura previa al intervalo y, para cerrar un día, puede faltar la siguiente. Hoy está en curso. Un intervalo sin muestras puede deberse a un sensor sin cambios o a la retención de Recorder. Las cifras muestran lo observado y no certifican un cierre completo.</p></div>
+    </section>
+    <section class="panel">
+      <div class="section-heading"><div><h2>Detalle por intervalo</h2><p class="muted">La misma agrupación y planta del gráfico</p></div><button id="csv" type="button">Descargar CSV</button></div>
+      <div class="table-scroll"><table><thead><tr><th>Intervalo · Madrid</th><th>Baja · kWh</th><th>Alta · kWh</th><th>Total · kWh</th></tr></thead><tbody id="summary"></tbody></table></div>
+      <div class="pager"><button id="summary-prev" type="button">Anterior</button><span id="summary-page"></span><button id="summary-next" type="button">Siguiente</button></div>
+    </section>
+    <section class="panel">
+      <div class="section-heading"><div><h2>Explorar lecturas</h2><p class="muted">Valores acumulados originales de Home Assistant</p></div><button id="json" type="button">Descargar JSON original</button></div>
+      <div class="sample-filters"><label>Estado<select id="quality"><option value="all">Todos</option><option value="valid">Válidos</option><option value="invalid">Inválidos</option><option value="reset">Descensos del contador</option></select></label><label>Buscar<input id="search" type="search" placeholder="Fecha, hora, estado o sensor"></label></div>
+      <div class="table-scroll"><table><thead><tr><th>Fecha · Madrid</th><th>Planta</th><th>Contador · kWh</th><th>Incremento · kWh</th><th>Estado</th></tr></thead><tbody id="samples"></tbody></table></div>
+      <div class="pager"><button id="prev" type="button">Anterior</button><span id="sample-page"></span><button id="next" type="button">Siguiente</button></div>
+    </section>
+    </div>
+  </section>
+  <footer>SIERRA BLANCA <span>Lectura directa de Home Assistant · Fechas en Europe/Madrid</span></footer>
+</main>
+</body>
+</html>
